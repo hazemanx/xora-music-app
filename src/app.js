@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { SearchIcon, HomeIcon, LibraryIcon, PlusCircleIcon } from '@heroicons/react/solid';
+import { HomeIcon, LibraryIcon, PlusCircleIcon } from '@heroicons/react/solid';
 import Player from './components/Player';
+import SearchBar from './components/SearchBar';
 
 function App() {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -43,14 +44,7 @@ function App() {
       <div className="flex-1 flex flex-col">
         {/* Header */}
         <header className="bg-gray-800 p-4 flex justify-between items-center">
-          <div className="flex items-center">
-            <SearchIcon className="h-6 w-6 mr-2" />
-            <input
-              type="text"
-              placeholder="Search for Artists, Songs, or Podcasts"
-              className="bg-white bg-opacity-20 text-white placeholder-gray-400 px-4 py-2 rounded-full"
-            />
-          </div>
+          <SearchBar />
           <div>
             <button className="bg-white text-black px-4 py-2 rounded-full">Log in</button>
           </div>
