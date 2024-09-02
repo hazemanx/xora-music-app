@@ -1,46 +1,19 @@
 import React, { useState } from 'react';
-import { XIcon, SearchIcon, HomeIcon, LibraryIcon, PlusCircleIcon } from '@heroicons/react/solid';
+import { SearchIcon } from '@heroicons/react/solid';
 import { PlayIcon, PauseIcon, FastForwardIcon, RewindIcon } from '@heroicons/react/solid';
+import Sidebar from './components/Sidebar';
 
 function App() {
   const [isPlaying, setIsPlaying] = useState(false);
 
   return (
     <div className="flex h-screen bg-black text-white">
-      {/* Sidebar */}
-      <div className="w-64 bg-gray-900 p-5">
-        <div className="flex items-center mb-10">
-          <XIcon className="h-10 w-10 text-white" />
-          <h1 className="text-2xl font-bold ml-2">XORA</h1>
-        </div>
-        <nav>
-          <ul>
-            <li className="flex items-center mb-4">
-              <HomeIcon className="h-6 w-6 mr-2" />
-              <span>Home</span>
-            </li>
-            <li className="flex items-center mb-4">
-              <SearchIcon className="h-6 w-6 mr-2" />
-              <span>Search</span>
-            </li>
-            <li className="flex items-center mb-4">
-              <LibraryIcon className="h-6 w-6 mr-2" />
-              <span>Your Library</span>
-            </li>
-          </ul>
-        </nav>
-        <div className="mt-8">
-          <button className="flex items-center">
-            <PlusCircleIcon className="h-6 w-6 mr-2" />
-            <span>Create Playlist</span>
-          </button>
-        </div>
-      </div>
-
+      <Sidebar />
+      
       {/* Main content */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <header className="bg-gray-800 p-4 flex justify-between items-center">
+        <header className="bg-gray-900 p-4 flex justify-between items-center">
           <div className="flex items-center">
             <SearchIcon className="h-6 w-6 mr-2" />
             <input
