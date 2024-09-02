@@ -1,19 +1,48 @@
 import React, { useState } from 'react';
-import { SearchIcon } from '@heroicons/react/solid';
-import { PlayIcon, PauseIcon, FastForwardIcon, RewindIcon } from '@heroicons/react/solid';
-import Sidebar from './components/Sidebar';
+import { SearchIcon, HomeIcon, LibraryIcon, PlusCircleIcon } from '@heroicons/react/solid';
+import Player from './components/Player';
 
 function App() {
   const [isPlaying, setIsPlaying] = useState(false);
 
   return (
     <div className="flex h-screen bg-black text-white">
-      <Sidebar />
+      {/* Sidebar */}
+      <div className="w-64 bg-gray-900 p-5">
+        <div className="flex items-center mb-10">
+          <svg className="h-10 w-10 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 22l-9-5V7l9-5 9 5v10l-9 5zm0-2.615l7-3.89V8.505l-7-3.89-7 3.89v6.99l7 3.89zm0-14.77l5 2.78v5.57l-5 2.78-5-2.78V7.395l5-2.78z"/>
+          </svg>
+          <h1 className="text-2xl font-bold ml-2">XORA</h1>
+        </div>
+        <nav>
+          <ul>
+            <li className="flex items-center mb-4 text-gray-400 hover:text-white cursor-pointer">
+              <HomeIcon className="h-6 w-6 mr-2" />
+              <span>Home</span>
+            </li>
+            <li className="flex items-center mb-4 text-gray-400 hover:text-white cursor-pointer">
+              <SearchIcon className="h-6 w-6 mr-2" />
+              <span>Search</span>
+            </li>
+            <li className="flex items-center mb-4 text-gray-400 hover:text-white cursor-pointer">
+              <LibraryIcon className="h-6 w-6 mr-2" />
+              <span>Your Library</span>
+            </li>
+          </ul>
+        </nav>
+        <div className="mt-8">
+          <button className="flex items-center text-gray-400 hover:text-white">
+            <PlusCircleIcon className="h-6 w-6 mr-2" />
+            <span>Create Playlist</span>
+          </button>
+        </div>
+      </div>
       
       {/* Main content */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <header className="bg-gray-900 p-4 flex justify-between items-center">
+        <header className="bg-gray-800 p-4 flex justify-between items-center">
           <div className="flex items-center">
             <SearchIcon className="h-6 w-6 mr-2" />
             <input
@@ -34,31 +63,7 @@ function App() {
         </main>
 
         {/* Player */}
-        <div className="bg-gray-900 p-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center">
-              <img src="/api/placeholder/50/50" alt="Album cover" className="w-12 h-12 mr-4" />
-              <div>
-                <h3 className="font-semibold">Song Title</h3>
-                <p className="text-sm text-gray-400">Artist Name</p>
-              </div>
-            </div>
-            <div className="flex items-center">
-              <RewindIcon className="h-6 w-6 mr-4 cursor-pointer" />
-              {isPlaying ? (
-                <PauseIcon className="h-8 w-8 cursor-pointer" onClick={() => setIsPlaying(false)} />
-              ) : (
-                <PlayIcon className="h-8 w-8 cursor-pointer" onClick={() => setIsPlaying(true)} />
-              )}
-              <FastForwardIcon className="h-6 w-6 ml-4 cursor-pointer" />
-            </div>
-            <div className="w-1/3">
-              <div className="bg-gray-700 h-1 rounded-full">
-                <div className="bg-white h-1 w-1/3 rounded-full"></div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Player isPlaying={isPlaying} setIsPlaying={setIsPlaying} />
       </div>
     </div>
   );
