@@ -1,80 +1,113 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Route, Switch, Link } from 'react-router-dom';
-import { HomeIcon, SearchIcon, LibraryIcon, PlusCircleIcon } from '@heroicons/react/solid';
-import Player from './components/Player';
-import SearchBar from './components/SearchBar';
-import Home from './pages/Home';
-import Search from './pages/Search';
-import Library from './pages/Library';
+import React, { useState, useEffect } from 'react';
+import { auth, getPlaylists, savePlaylist } from './firebase';
+import Navbar from './components/Navbar';
+import Auth from './components/Auth';
+import MusicPlayer from './components/MusicPlayer';
+import TrackList from './components/TrackList';
+import Playlists from './components/Playlists';
+
+// This is a mock playlist. In a real app, you'd fetch this from your database or API.
+const initialTracks = [
+  { id: 1, title: "Song 1", artist: "Artist 1", url: "https://example.com/song1.mp3" },
+  { id: 2, title: "Song 2", artist: "Artist 2", url: "https://example.com/song2.mp3" },
+  { id: 3, title: "Song 3", artist: "Artist 3", url: "https://example.com/song3.mp3" },
+];
 
 function App() {
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [playlists, setPlaylists] = useState([]);
+  const [currentPlaylist, setCurrentPlaylist] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
+  useEffect(() => {
+    const fetchPlaylists = async () => {
+      if (auth.currentUser) {
+        const fetchedPlaylists = await getPlaylists(auth.currentUser.uid);
+        setPlaylists(fetchedPlaylists);
+      }
+    };
+    fetchPlaylists();
+  }, []);
+
+  const handleNextTrack = () => {
+    const playlist = currentPlaylist !== null ? playlists[currentPlaylist].tracks : initialTracks;
+    setCurrentTrackIndex((prevIndex) => (prevIndex + 1) % playlist.length);
+  };
+
+  const handlePreviousTrack = () => {
+    const playlist = currentPlaylist !== null ? playlists[currentPlaylist].tracks : initialTracks;
+    setCurrentTrackIndex((prevIndex) => (prevIndex - 1 + playlist.length) % playlist.length);
+  };
+
+  const handleCreatePlaylist = async (name) => {
+    const newPlaylist = { name, tracks: [] };
+    const updatedPlaylists = [...playlists, newPlaylist];
+    setPlaylists(updatedPlaylists);
+    if (auth.currentUser) {
+      await savePlaylist(auth.currentUser.uid, newPlaylist);
+    }
+  };
+
+  const handleSelectPlaylist = (index) => {
+    setCurrentPlaylist(index);
+    setCurrentTrackIndex(0);
+  };
+
+  const handleAddToPlaylist = async (trackId) => {
+    if (currentPlaylist !== null) {
+      const track = initialTracks.find(t => t.id === trackId);
+      const updatedPlaylists = [...playlists];
+      updatedPlaylists[currentPlaylist].tracks.push(track);
+      setPlaylists(updatedPlaylists);
+      if (auth.currentUser) {
+        await savePlaylist(auth.currentUser.uid, updatedPlaylists[currentPlaylist]);
+      }
+    }
+  };
+
+  const handlePlayPause = () => {
+    setIsPlaying(!isPlaying);
+  };
+
+  const currentTracks = currentPlaylist !== null ? playlists[currentPlaylist].tracks : initialTracks;
+
   return (
-    <Router>
-      <div className="flex h-screen bg-black text-white">
-        {/* Sidebar */}
-        <div className="w-64 bg-gray-900 p-5">
-          <div className="flex items-center mb-10">
-            <svg className="h-10 w-10 text-white" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 22l-9-5V7l9-5 9 5v10l-9 5zm0-2.615l7-3.89V8.505l-7-3.89-7 3.89v6.99l7 3.89zm0-14.77l5 2.78v5.57l-5 2.78-5-2.78V7.395l5-2.78z"/>
-            </svg>
-            <h1 className="text-2xl font-bold ml-2">XORA</h1>
-          </div>
-          <nav>
-            <ul>
-              <li className="flex items-center mb-4 text-gray-400 hover:text-white cursor-pointer">
-                <Link to="/" className="flex items-center">
-                  <HomeIcon className="h-6 w-6 mr-2" />
-                  <span>Home</span>
-                </Link>
-              </li>
-              <li className="flex items-center mb-4 text-gray-400 hover:text-white cursor-pointer">
-                <Link to="/search" className="flex items-center">
-                  <SearchIcon className="h-6 w-6 mr-2" />
-                  <span>Search</span>
-                </Link>
-              </li>
-              <li className="flex items-center mb-4 text-gray-400 hover:text-white cursor-pointer">
-                <Link to="/library" className="flex items-center">
-                  <LibraryIcon className="h-6 w-6 mr-2" />
-                  <span>Your Library</span>
-                </Link>
-              </li>
-            </ul>
-          </nav>
-          <div className="mt-8">
-            <button className="flex items-center text-gray-400 hover:text-white">
-              <PlusCircleIcon className="h-6 w-6 mr-2" />
-              <span>Create Playlist</span>
-            </button>
-          </div>
-        </div>
-        
-        {/* Main content */}
-        <div className="flex-1 flex flex-col">
-          {/* Header */}
-          <header className="bg-gray-800 p-4 flex justify-between items-center">
-            <SearchBar />
-            <div>
-              <button className="bg-white text-black px-4 py-2 rounded-full">Log in</button>
+    <div className="App min-h-screen bg-gray-100">
+      <Navbar />
+      <div className="container mx-auto p-4 mb-20">
+        <h1 className="text-3xl font-bold mb-4">Welcome to XORA Music</h1>
+        {!auth.currentUser && <Auth />}
+        {auth.currentUser && (
+          <div>
+            <p className="mb-4">Welcome, {auth.currentUser.email}!</p>
+            <div className="flex">
+              <div className="w-1/2 pr-4">
+                <TrackList 
+                  tracks={currentTracks} 
+                  currentTrackIndex={currentTrackIndex}
+                  onTrackSelect={(index) => setCurrentTrackIndex(index)}
+                  onAddToPlaylist={handleAddToPlaylist}
+                />
+              </div>
+              <div className="w-1/2 pl-4">
+                <Playlists 
+                  playlists={playlists}
+                  onCreatePlaylist={handleCreatePlaylist}
+                  onSelectPlaylist={handleSelectPlaylist}
+                />
+              </div>
             </div>
-          </header>
-
-          {/* Content */}
-          <main className="flex-1 overflow-y-auto">
-            <Switch>
-              <Route exact path="/" component={Home} />
-              <Route path="/search" component={Search} />
-              <Route path="/library" component={Library} />
-            </Switch>
-          </main>
-
-          {/* Player */}
-          <Player isPlaying={isPlaying} setIsPlaying={setIsPlaying} />
-        </div>
+          </div>
+        )}
       </div>
-    </Router>
+      <MusicPlayer 
+        track={currentTracks[currentTrackIndex]} 
+        isPlaying={isPlaying}
+        onPlayPause={handlePlayPause}
+        onNextTrack={handleNextTrack}
+        onPreviousTrack={handlePreviousTrack}
+      />
+    </div>
   );
 }
 
