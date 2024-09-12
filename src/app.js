@@ -28,6 +28,7 @@ function App() {
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState('off'); // 'off', 'all', 'one'
   const [queue, setQueue] = useState([]);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
     const fetchPlaylists = async () => {
@@ -46,6 +47,19 @@ function App() {
       }
     };
     fetchPlaylists();
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   const handleNextTrack = () => {
@@ -186,6 +200,11 @@ function App() {
   return (
     <div className="App min-h-screen bg-gray-100">
       <Navbar />
+      {!isOnline && (
+        <div className="bg-yellow-500 text-white p-2 text-center">
+          You are currently offline. Some features may be limited.
+        </div>
+      )}
       <div className="container mx-auto p-4 mb-20">
         <h1 className="text-3xl font-bold mb-4">Welcome to XORA Music</h1>
         {!auth.currentUser && <Auth />}
