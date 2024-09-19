@@ -8,6 +8,7 @@ import Playlists from './components/Playlists';
 import SearchBar from './components/SearchBar';
 import PlaylistViewer from './components/PlaylistViewer';
 import QueueViewer from './components/QueueViewer';
+import InstallPrompt from './components/InstallPrompt';
 import { DragDropContext } from 'react-beautiful-dnd';
 
 // This is a mock playlist. In a real app, you'd fetch this from your database or API.
@@ -271,6 +272,7 @@ function App() {
         repeat={repeat}
         onToggleRepeat={handleToggleRepeat}
       />
+      <InstallPrompt />
     </div>
   );
 }
