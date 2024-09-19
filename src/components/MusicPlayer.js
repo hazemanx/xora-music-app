@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Howl, Howler } from 'howler';
 import './MusicPlayer.css';
+import Equalizer from './Equalizer';
 
 function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNextTrack, onPreviousTrack, onTrackEnd, onError }) {
   const [sound, setSound] = useState(null);
@@ -9,6 +10,15 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
   const [duration, setDuration] = useState(0);
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState('off'); // 'off', 'all', 'one'
+  const [isEqualizerVisible, setIsEqualizerVisible] = useState(false);
+  const [audioContext, setAudioContext] = useState(null);
+  const [sourceNode, setSourceNode] = useState(null);
+
+  useEffect(() => {
+    const newAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    setAudioContext(newAudioContext);
+    return () => newAudioContext.close();
+  }, []);
 
   useEffect(() => {
     if (tracks.length > 0 && currentTrackIndex < tracks.length) {
@@ -21,6 +31,11 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
         volume: volume,
         onload: () => {
           setDuration(newSound.duration());
+          if (audioContext) {
+            const newSourceNode = audioContext.createMediaElementSource(newSound._sounds[0]._node);
+            setSourceNode(newSourceNode);
+            newSourceNode.connect(audioContext.destination);
+          }
         },
         onplay: () => onPlayPause(true),
         onpause: () => onPlayPause(false),
@@ -34,7 +49,7 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
       });
       setSound(newSound);
     }
-  }, [tracks, currentTrackIndex]);
+  }, [tracks, currentTrackIndex, audioContext]);
 
   useEffect(() => {
     if (sound) {
@@ -97,6 +112,10 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
     setRepeat(modes[nextIndex]);
   };
 
+  const toggleEqualizer = () => {
+    setIsEqualizerVisible(!isEqualizerVisible);
+  };
+
   const formatTime = (time) => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
@@ -120,6 +139,9 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
             </button>
             <button className={`text-white ${repeat !== 'off' ? 'bg-blue-500' : ''}`} onClick={toggleRepeat}>
               Repeat: {repeat === 'one' ? '1' : repeat === 'all' ? 'All' : 'Off'}
+            </button>
+            <button className={`text-white ${isEqualizerVisible ? 'bg-blue-500' : ''}`} onClick={toggleEqualizer}>
+              Equalizer
             </button>
           </div>
         </div>
@@ -156,6 +178,9 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
             <button className="text-white" onClick={onNextTrack}>Next</button>
           </div>
         </div>
+        {isEqualizerVisible && (
+          <Equalizer audioContext={audioContext} sourceNode={sourceNode} />
+        )}
       </div>
     </div>
   );
