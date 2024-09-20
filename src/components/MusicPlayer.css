@@ -1,0 +1,15 @@
+/* Add this to your existing MusicPlayer.css */
+input[type="range"].progress {
+    height: 4px;
+    background: #4a5568;
+  }
+  
+  input[type="range"].progress::-webkit-slider-thumb {
+    width: 12px;
+    height: 12px;
+  }
+  
+  input[type="range"].progress::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+  }
