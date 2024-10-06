@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { auth, getPlaylists, savePlaylist } from './src/firebase';
+import { auth, getPlaylists, savePlaylist } from './firebase';
 import Navbar from './components/Navbar';
 import Auth from './components/Auth';
 import MusicPlayer from './components/MusicPlayer';
