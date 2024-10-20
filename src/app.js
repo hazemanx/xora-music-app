@@ -9,6 +9,7 @@ import SearchBar from './components/SearchBar';
 import PlaylistViewer from './components/PlaylistViewer';
 import QueueViewer from './components/QueueViewer';
 import InstallPrompt from './components/InstallPrompt';
+import TrackMetadataEditor from './components/TrackMetadataEditor';
 import { DragDropContext } from 'react-beautiful-dnd';
 
 // This is a mock playlist. In a real app, you'd fetch this from your database or API.
@@ -30,6 +31,8 @@ function App() {
   const [repeat, setRepeat] = useState('off'); // 'off', 'all', 'one'
   const [queue, setQueue] = useState([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [editingTrack, setEditingTrack] = useState(null);
+  const [tracks, setTracks] = useState(initialTracks);
 
   useEffect(() => {
     const fetchPlaylists = async () => {
@@ -116,7 +119,7 @@ function App() {
       setIsLoading(true);
       setError(null);
       try {
-        const track = initialTracks.find(t => t.id === trackId);
+        const track = tracks.find(t => t.id === trackId);
         const updatedPlaylists = [...playlists];
         updatedPlaylists[currentPlaylist].tracks.push(track);
         setPlaylists(updatedPlaylists);
@@ -189,7 +192,20 @@ function App() {
     setRepeat(modes[nextIndex]);
   };
 
-  const filteredTracks = initialTracks.filter(track => 
+  const handleEditMetadata = (track) => {
+    setEditingTrack(track);
+  };
+
+  const handleSaveMetadata = (updatedTrack) => {
+    const updatedTracks = tracks.map(t => 
+      t.id === updatedTrack.id ? updatedTrack : t
+    );
+    setTracks(updatedTracks);
+    setEditingTrack(null);
+    // Here you would also update the track in your database
+  };
+
+  const filteredTracks = tracks.filter(track => 
     track.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     track.artist.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -226,6 +242,7 @@ function App() {
                   }}
                   onAddToPlaylist={handleAddToPlaylist}
                   onAddToQueue={handleAddToQueue}
+                  onEditMetadata={handleEditMetadata}
                 />
               </div>
               <div className="w-1/3 px-2">
@@ -255,6 +272,13 @@ function App() {
                 />
               </div>
             </div>
+            {editingTrack && (
+              <TrackMetadataEditor
+                track={editingTrack}
+                onSave={handleSaveMetadata}
+                onCancel={() => setEditingTrack(null)}
+              />
+            )}
           </div>
         )}
       </div>
