@@ -1,5 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { auth, getPlaylists, savePlaylist } from './firebase';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { auth, getPlaylists, savePlaylist, updateTrackMetadata } from './firebase';
+import { useAudioContext } from './hooks/useAudioContext';
+import useOfflineDetection from './hooks/useOfflineDetection';
+import usePlaybackState from './hooks/usePlaybackState';
+import { DragDropContext } from 'react-beautiful-dnd';
+
+// Components
 import Navbar from './components/Navbar';
 import Auth from './components/Auth';
 import MusicPlayer from './components/MusicPlayer';
@@ -10,260 +16,255 @@ import PlaylistViewer from './components/PlaylistViewer';
 import QueueViewer from './components/QueueViewer';
 import InstallPrompt from './components/InstallPrompt';
 import TrackMetadataEditor from './components/TrackMetadataEditor';
-import { DragDropContext } from 'react-beautiful-dnd';
+import OfflineIndicator from './components/OfflineIndicator';
+import AudioProcessor from './components/audio/AudioProcessor';
+import ErrorBoundary from './components/ErrorBoundary';
 
-// This is a mock playlist. In a real app, you'd fetch this from your database or API.
-const initialTracks = [
-  { id: 1, title: "Song 1", artist: "Artist 1", url: "https://example.com/song1.mp3" },
-  { id: 2, title: "Song 2", artist: "Artist 2", url: "https://example.com/song2.mp3" },
-  { id: 3, title: "Song 3", artist: "Artist 3", url: "https://example.com/song3.mp3" },
-];
+// Constants and Utils
+import { REPEAT_MODES, INITIAL_TRACKS } from './constants';
+import { shuffleArray, debounce } from './utils';
 
 function App() {
-  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  // Core state
+  const [tracks, setTracks] = useState(INITIAL_TRACKS);
   const [playlists, setPlaylists] = useState([]);
   const [currentPlaylist, setCurrentPlaylist] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingTrack, setEditingTrack] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [shuffle, setShuffle] = useState(false);
-  const [repeat, setRepeat] = useState('off'); // 'off', 'all', 'one'
-  const [queue, setQueue] = useState([]);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [editingTrack, setEditingTrack] = useState(null);
-  const [tracks, setTracks] = useState(initialTracks);
 
+  // Audio processing state
+  const { 
+    audioContext, 
+    sourceNode,
+    isInitialized: isAudioInitialized 
+  } = useAudioContext();
+
+  // Playback state management
+  const {
+    currentTrackIndex,
+    isPlaying,
+    shuffle,
+    repeat,
+    queue,
+    setCurrentTrackIndex,
+    setIsPlaying,
+    setShuffle,
+    setRepeat,
+    setQueue,
+    handleNextTrack,
+    handlePreviousTrack
+  } = usePlaybackState(tracks);
+
+  // Offline detection
+  const isOnline = useOfflineDetection();
+
+  // Memoized filtered data
+  const filteredData = useMemo(() => {
+    const query = searchQuery.toLowerCase();
+    return {
+      tracks: tracks.filter(track => 
+        track.title.toLowerCase().includes(query) ||
+        track.artist.toLowerCase().includes(query)
+      ),
+      playlists: playlists.filter(playlist =>
+        playlist.name.toLowerCase().includes(query)
+      )
+    };
+  }, [tracks, playlists, searchQuery]);
+
+  // Initialize playlists
   useEffect(() => {
-    const fetchPlaylists = async () => {
-      if (auth.currentUser) {
-        setIsLoading(true);
-        setError(null);
-        try {
-          const fetchedPlaylists = await getPlaylists(auth.currentUser.uid);
-          setPlaylists(fetchedPlaylists);
-        } catch (err) {
-          setError('Failed to fetch playlists. Please try again later.');
-          console.error('Error fetching playlists:', err);
-        } finally {
-          setIsLoading(false);
-        }
+    const initializePlaylists = async () => {
+      if (!auth.currentUser) return;
+      
+      setIsLoading(true);
+      try {
+        const fetchedPlaylists = await getPlaylists(auth.currentUser.uid);
+        setPlaylists(fetchedPlaylists);
+      } catch (err) {
+        setError('Failed to fetch playlists');
+        console.error('Playlist fetch error:', err);
+      } finally {
+        setIsLoading(false);
       }
     };
-    fetchPlaylists();
+
+    initializePlaylists();
   }, []);
 
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+  // Playlist management
+  const handleCreatePlaylist = useCallback(async (name) => {
+    if (!auth.currentUser) return;
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-
-  const handleNextTrack = () => {
-    if (queue.length > 0) {
-      if (shuffle) {
-        const nextIndex = Math.floor(Math.random() * queue.length);
-        setCurrentTrackIndex(nextIndex);
-      } else {
-        setCurrentTrackIndex((prevIndex) => (prevIndex + 1) % queue.length);
-      }
-    }
-  };
-
-  const handlePreviousTrack = () => {
-    if (queue.length > 0) {
-      if (shuffle) {
-        const prevIndex = Math.floor(Math.random() * queue.length);
-        setCurrentTrackIndex(prevIndex);
-      } else {
-        setCurrentTrackIndex((prevIndex) => (prevIndex - 1 + queue.length) % queue.length);
-      }
-    }
-  };
-
-  const handleCreatePlaylist = async (name) => {
     setIsLoading(true);
-    setError(null);
     try {
       const newPlaylist = { name, tracks: [] };
       const updatedPlaylists = [...playlists, newPlaylist];
+      await savePlaylist(auth.currentUser.uid, newPlaylist);
       setPlaylists(updatedPlaylists);
-      if (auth.currentUser) {
-        await savePlaylist(auth.currentUser.uid, newPlaylist);
-      }
     } catch (err) {
-      setError('Failed to create playlist. Please try again.');
-      console.error('Error creating playlist:', err);
+      setError('Failed to create playlist');
+      console.error('Playlist creation error:', err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [playlists]);
 
-  const handleSelectPlaylist = (index) => {
+  const handleSelectPlaylist = useCallback((index) => {
     setCurrentPlaylist(index);
     setQueue(playlists[index].tracks);
     setCurrentTrackIndex(0);
     setShuffle(false);
-    setRepeat('off');
-  };
+    setRepeat(REPEAT_MODES.OFF);
+  }, [playlists, setQueue, setCurrentTrackIndex, setShuffle, setRepeat]);
 
-  const handleAddToPlaylist = async (trackId) => {
-    if (currentPlaylist !== null) {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const track = tracks.find(t => t.id === trackId);
-        const updatedPlaylists = [...playlists];
-        updatedPlaylists[currentPlaylist].tracks.push(track);
-        setPlaylists(updatedPlaylists);
-        if (auth.currentUser) {
-          await savePlaylist(auth.currentUser.uid, updatedPlaylists[currentPlaylist]);
-        }
-      } catch (err) {
-        setError('Failed to add track to playlist. Please try again.');
-        console.error('Error adding track to playlist:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  const handleAddToQueue = (track) => {
-    setQueue(prevQueue => [...prevQueue, track]);
-  };
-
-  const handleReorderQueue = (startIndex, endIndex) => {
+  // Queue management
+  const handleReorderQueue = useCallback((startIndex, endIndex) => {
     const newQueue = Array.from(queue);
     const [reorderedItem] = newQueue.splice(startIndex, 1);
     newQueue.splice(endIndex, 0, reorderedItem);
     setQueue(newQueue);
-  };
+  }, [queue, setQueue]);
 
-  const handlePlayPause = (playing) => {
-    setIsPlaying(playing);
-  };
+  // Playlist reordering with optimistic updates
+  const handleReorderPlaylist = useCallback(async (startIndex, endIndex) => {
+    if (currentPlaylist === null) return;
 
-  const handleTrackEnd = () => {
-    if (repeat === 'one') {
-      // The MusicPlayer component will handle repeating the current track
-    } else if (repeat === 'all' || (!shuffle && currentTrackIndex < queue.length - 1)) {
-      handleNextTrack();
-    } else if (shuffle) {
-      handleNextTrack(); // This will choose a random track due to shuffle being true
-    } else {
-      setIsPlaying(false);
-    }
-  };
-
-  const handleReorderPlaylist = async (startIndex, endIndex) => {
-    if (currentPlaylist !== null) {
-      const updatedPlaylists = [...playlists];
-      const [reorderedItem] = updatedPlaylists[currentPlaylist].tracks.splice(startIndex, 1);
-      updatedPlaylists[currentPlaylist].tracks.splice(endIndex, 0, reorderedItem);
-      
-      setPlaylists(updatedPlaylists);
-      setQueue(updatedPlaylists[currentPlaylist].tracks);
-      
-      if (auth.currentUser) {
-        try {
-          await savePlaylist(auth.currentUser.uid, updatedPlaylists[currentPlaylist]);
-        } catch (err) {
-          setError('Failed to save reordered playlist. Please try again.');
-          console.error('Error saving reordered playlist:', err);
-        }
+    const updatedPlaylists = [...playlists];
+    const playlist = updatedPlaylists[currentPlaylist];
+    const [reorderedItem] = playlist.tracks.splice(startIndex, 1);
+    playlist.tracks.splice(endIndex, 0, reorderedItem);
+    
+    // Optimistic update
+    setPlaylists(updatedPlaylists);
+    setQueue(playlist.tracks);
+    
+    // Persist changes
+    if (auth.currentUser) {
+      try {
+        await savePlaylist(auth.currentUser.uid, playlist);
+      } catch (err) {
+        setError('Failed to save playlist order');
+        // Revert on error
+        setPlaylists(playlists);
+        setQueue(playlists[currentPlaylist].tracks);
       }
     }
-  };
+  }, [currentPlaylist, playlists, setQueue]);
 
-  const handleToggleShuffle = () => {
-    setShuffle(!shuffle);
-  };
+  // Track metadata management
+  const handleSaveMetadata = useCallback(async (updatedTrack) => {
+    try {
+      await updateTrackMetadata(updatedTrack);
+      setTracks(prev => prev.map(t => 
+        t.id === updatedTrack.id ? updatedTrack : t
+      ));
+      setEditingTrack(null);
+    } catch (err) {
+      setError('Failed to update track metadata');
+    }
+  }, []);
 
-  const handleToggleRepeat = () => {
-    const modes = ['off', 'all', 'one'];
-    const nextIndex = (modes.indexOf(repeat) + 1) % modes.length;
-    setRepeat(modes[nextIndex]);
-  };
+  // Playback handlers
+  const handlePlayPause = useCallback((playing) => {
+    setIsPlaying(playing);
+  }, [setIsPlaying]);
 
-  const handleEditMetadata = (track) => {
-    setEditingTrack(track);
-  };
-
-  const handleSaveMetadata = (updatedTrack) => {
-    const updatedTracks = tracks.map(t => 
-      t.id === updatedTrack.id ? updatedTrack : t
-    );
-    setTracks(updatedTracks);
-    setEditingTrack(null);
-    // Here you would also update the track in your database
-  };
-
-  const filteredTracks = tracks.filter(track => 
-    track.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    track.artist.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const filteredPlaylists = playlists.filter(playlist =>
-    playlist.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleTrackEnd = useCallback(() => {
+    switch(repeat) {
+      case REPEAT_MODES.ONE:
+        // Current track will repeat automatically
+        break;
+      case REPEAT_MODES.ALL:
+        handleNextTrack();
+        break;
+      default:
+        if (currentTrackIndex < queue.length - 1) {
+          handleNextTrack();
+        } else {
+          setIsPlaying(false);
+        }
+    }
+  }, [repeat, currentTrackIndex, queue.length, handleNextTrack, setIsPlaying]);
 
   return (
-    <div className="App min-h-screen bg-gray-100">
-      <Navbar />
-      {!isOnline && (
-        <div className="bg-yellow-500 text-white p-2 text-center">
-          You are currently offline. Some features may be limited.
-        </div>
-      )}
-      <div className="container mx-auto p-4 mb-20">
-        <h1 className="text-3xl font-bold mb-4">Welcome to XORA Music</h1>
-        {!auth.currentUser && <Auth />}
-        {auth.currentUser && (
-          <div>
-            <p className="mb-4">Welcome, {auth.currentUser.email}!</p>
-            {isLoading && <p className="text-blue-500">Loading...</p>}
-            {error && <p className="text-red-500">{error}</p>}
-            <SearchBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-            <div className="flex">
-              <div className="w-1/3 pr-4">
-                <TrackList 
-                  tracks={filteredTracks} 
-                  currentTrackIndex={currentTrackIndex}
-                  onTrackSelect={(index) => {
-                    setCurrentTrackIndex(index);
-                    setQueue([...queue, filteredTracks[index]]);
-                  }}
-                  onAddToPlaylist={handleAddToPlaylist}
-                  onAddToQueue={handleAddToQueue}
-                  onEditMetadata={handleEditMetadata}
-                />
-              </div>
-              <div className="w-1/3 px-2">
-                <Playlists 
-                  playlists={filteredPlaylists}
-                  onCreatePlaylist={handleCreatePlaylist}
-                  onSelectPlaylist={handleSelectPlaylist}
-                />
-                {currentPlaylist !== null && (
-                  <PlaylistViewer
-                    tracks={playlists[currentPlaylist].tracks}
-                    currentTrackIndex={currentTrackIndex}
-                    onTrackSelect={(index) => {
-                      setCurrentTrackIndex(index);
-                      setQueue(playlists[currentPlaylist].tracks);
-                    }}
-                    onReorder={handleReorderPlaylist}
-                  />
+    <ErrorBoundary>
+      <div className="App min-h-screen bg-gradient-to-b from-gray-900 to-black text-white">
+        <Navbar />
+        <OfflineIndicator isOnline={isOnline} />
+        
+        <div className="container mx-auto p-4 mb-20">
+          <h1 className="text-4xl font-bold mb-6 bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
+            Welcome to XORA Music
+          </h1>
+
+          {!auth.currentUser ? (
+            <Auth />
+          ) : (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <p className="text-gray-300">
+                  Welcome, {auth.currentUser.email}!
+                </p>
+                {isLoading && (
+                  <div className="animate-pulse text-blue-500">
+                    Loading...
+                  </div>
                 )}
               </div>
-              <div className="w-1/3 pl-4">
+
+              {error && (
+                <div className="bg-red-500/10 border border-red-500 text-red-500 p-3 rounded">
+                  {error}
+                </div>
+              )}
+
+              <SearchBar 
+                searchQuery={searchQuery} 
+                setSearchQuery={setSearchQuery} 
+              />
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <TrackList 
+                  tracks={filteredData.tracks}
+                  currentTrackIndex={currentTrackIndex}
+                  onTrackSelect={index => {
+                    setCurrentTrackIndex(index);
+                    setQueue(prev => [...prev, filteredData.tracks[index]]);
+                  }}
+                  onAddToQueue={track => setQueue(prev => [...prev, track])}
+                  onEditMetadata={setEditingTrack}
+                  isProcessingEnabled={isAudioInitialized}
+                />
+
+                <div className="space-y-4">
+                  <Playlists 
+                    playlists={filteredData.playlists}
+                    onCreatePlaylist={handleCreatePlaylist}
+                    onSelectPlaylist={handleSelectPlaylist}
+                    currentPlaylist={currentPlaylist}
+                  />
+                  
+                  {currentPlaylist !== null && (
+                    <DragDropContext onDragEnd={({source, destination}) => {
+                      if (destination) {
+                        handleReorderPlaylist(source.index, destination.index);
+                      }
+                    }}>
+                      <PlaylistViewer
+                        tracks={playlists[currentPlaylist].tracks}
+                        currentTrackIndex={currentTrackIndex}
+                        onTrackSelect={index => {
+                          setCurrentTrackIndex(index);
+                          setQueue(playlists[currentPlaylist].tracks);
+                        }}
+                      />
+                    </DragDropContext>
+                  )}
+                </div>
+
                 <QueueViewer
                   queue={queue}
                   currentTrackIndex={currentTrackIndex}
@@ -271,33 +272,42 @@ function App() {
                   onReorderQueue={handleReorderQueue}
                 />
               </div>
+
+              {editingTrack && (
+                <TrackMetadataEditor
+                  track={editingTrack}
+                  onSave={handleSaveMetadata}
+                  onCancel={() => setEditingTrack(null)}
+                />
+              )}
             </div>
-            {editingTrack && (
-              <TrackMetadataEditor
-                track={editingTrack}
-                onSave={handleSaveMetadata}
-                onCancel={() => setEditingTrack(null)}
-              />
-            )}
-          </div>
-        )}
+          )}
+        </div>
+
+        <MusicPlayer 
+          tracks={queue}
+          currentTrackIndex={currentTrackIndex}
+          isPlaying={isPlaying}
+          onPlayPause={handlePlayPause}
+          onNextTrack={handleNextTrack}
+          onPreviousTrack={handlePreviousTrack}
+          onTrackEnd={handleTrackEnd}
+          onError={setError}
+          shuffle={shuffle}
+          onToggleShuffle={() => setShuffle(!shuffle)}
+          repeat={repeat}
+          onToggleRepeat={() => {
+            const modes = Object.values(REPEAT_MODES);
+            const nextIndex = (modes.indexOf(repeat) + 1) % modes.length;
+            setRepeat(modes[nextIndex]);
+          }}
+          audioContext={audioContext}
+          sourceNode={sourceNode}
+        />
+
+        <InstallPrompt />
       </div>
-      <MusicPlayer 
-        tracks={queue}
-        currentTrackIndex={currentTrackIndex}
-        isPlaying={isPlaying}
-        onPlayPause={handlePlayPause}
-        onNextTrack={handleNextTrack}
-        onPreviousTrack={handlePreviousTrack}
-        onTrackEnd={handleTrackEnd}
-        onError={(errorMessage) => setError(errorMessage)}
-        shuffle={shuffle}
-        onToggleShuffle={handleToggleShuffle}
-        repeat={repeat}
-        onToggleRepeat={handleToggleRepeat}
-      />
-      <InstallPrompt />
-    </div>
+    </ErrorBoundary>
   );
 }
 
