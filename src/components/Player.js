@@ -12,6 +12,9 @@ import {
   MusicNoteIcon,
   InformationCircleIcon
 } from '@heroicons/react/solid';
+import Equalizer from './Equalizer';
+import { useAudioContext } from '../hooks/useAudioContext';
+import { AudioProcessor } from './audio/AudioProcessor';
 
 function Player({ currentTrack, onNextTrack, onPreviousTrack }) {
   // Core playback state
@@ -25,24 +28,29 @@ function Player({ currentTrack, onNextTrack, onPreviousTrack }) {
   const [speed, setSpeed] = useState(1.0);
   const [pitch, setPitch] = useState(0);
   const [showAdvancedControls, setShowAdvancedControls] = useState(false);
+  const [showEqualizer, setShowEqualizer] = useState(false);
   
-  // Audio processing
-  const audioContextRef = useRef(null);
-  const sourceNodeRef = useRef(null);
-  const gainNodeRef = useRef(null);
+  // New audio processing state
+  const [isProcessingEnabled, setIsProcessingEnabled] = useState(false);
+  const [audioBuffer, setAudioBuffer] = useState(null);
 
-  // Initialize audio context
+  // Audio Context Integration
+  const { 
+    audioContext, 
+    sourceNode, 
+    gainNode, 
+    analyzer,
+    isInitialized,
+    connectSource,
+    getAnalyzerData 
+  } = useAudioContext();
+
+  // Initialize audio processing chain
   useEffect(() => {
-    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-    gainNodeRef.current = audioContextRef.current.createGain();
-    gainNodeRef.current.connect(audioContextRef.current.destination);
-    
-    return () => {
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
-    };
-  }, []);
+    if (isInitialized && sound?._sounds[0]?._node) {
+      connectSource(sound._sounds[0]._node);
+    }
+  }, [isInitialized, sound]);
 
   // Sound initialization
   useEffect(() => {
@@ -58,9 +66,15 @@ function Player({ currentTrack, onNextTrack, onPreviousTrack }) {
         rate: speed,
         onload: () => {
           setDuration(newSound.duration());
-          if (audioContextRef.current) {
-            sourceNodeRef.current = audioContextRef.current.createMediaElementSource(newSound._sounds[0]._node);
-            sourceNodeRef.current.connect(gainNodeRef.current);
+          if (isInitialized && newSound._sounds[0]?._node) {
+            connectSource(newSound._sounds[0]._node);
+            
+            // Initialize audio buffer for processing
+            fetch(currentTrack.url)
+              .then(response => response.arrayBuffer())
+              .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer))
+              .then(decodedBuffer => setAudioBuffer(decodedBuffer))
+              .catch(error => console.error('Error loading audio buffer:', error));
           }
         },
         onplay: () => setIsPlaying(true),
@@ -76,7 +90,7 @@ function Player({ currentTrack, onNextTrack, onPreviousTrack }) {
 
       setSound(newSound);
     }
-  }, [currentTrack?.url]);
+  }, [currentTrack?.url, isInitialized]);
 
   // Playback control handlers
   const togglePlayPause = () => {
@@ -107,12 +121,46 @@ function Player({ currentTrack, onNextTrack, onPreviousTrack }) {
     sound?.rate(value);
   };
 
+  // Enhanced pitch control with Web Audio API
   const handlePitchChange = (newPitch) => {
     const value = Math.max(-12, Math.min(12, newPitch));
     setPitch(value);
-    // Implement pitch shifting using Web Audio API
-    if (sourceNodeRef.current) {
-      // Advanced pitch implementation will go here
+    
+    if (sourceNode && isProcessingEnabled) {
+      const semitoneRatio = Math.pow(2, value / 12);
+      if (audioBuffer) {
+        processAudioWithPitch(audioBuffer, semitoneRatio);
+      }
+    }
+  };
+
+  // New audio processing function
+  const processAudioWithPitch = async (buffer, pitchRatio) => {
+    if (!isInitialized) return;
+
+    try {
+      const offlineContext = new OfflineAudioContext(
+        buffer.numberOfChannels,
+        buffer.length,
+        buffer.sampleRate
+      );
+
+      const source = offlineContext.createBufferSource();
+      source.buffer = buffer;
+      source.playbackRate.value = pitchRatio;
+
+      source.connect(offlineContext.destination);
+      source.start();
+
+      const renderedBuffer = await offlineContext.startRendering();
+      setAudioBuffer(renderedBuffer);
+      
+      if (isPlaying) {
+        sound.pause();
+        setTimeout(() => sound.play(), 50);
+      }
+    } catch (error) {
+      console.error('Error processing audio:', error);
     }
   };
 
@@ -124,7 +172,6 @@ function Player({ currentTrack, onNextTrack, onPreviousTrack }) {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-black text-white">
-      {/* Main Player UI */}
       <div className="max-w-screen-xl mx-auto p-4">
         {/* Track Info */}
         <div className="flex items-center justify-between mb-4">
@@ -192,10 +239,23 @@ function Player({ currentTrack, onNextTrack, onPreviousTrack }) {
           </button>
         </div>
 
-        {/* Advanced Controls (Speed & Pitch) */}
+        {/* Advanced Controls */}
         {showAdvancedControls && (
           <div className="mt-4 p-4 bg-gray-900 rounded-lg">
             <div className="space-y-4">
+              {/* Audio Processing Toggle */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-400">Enhanced Processing</span>
+                <button
+                  onClick={() => setIsProcessingEnabled(!isProcessingEnabled)}
+                  className={`px-4 py-2 rounded-lg ${
+                    isProcessingEnabled ? 'bg-blue-600' : 'bg-gray-700'
+                  }`}
+                >
+                  {isProcessingEnabled ? 'Enabled' : 'Disabled'}
+                </button>
+              </div>
+
               {/* Speed Control */}
               <div>
                 <label className="text-sm text-gray-400">Playback Speed ({speed.toFixed(2)}x)</label>
@@ -212,7 +272,10 @@ function Player({ currentTrack, onNextTrack, onPreviousTrack }) {
               
               {/* Pitch Control */}
               <div>
-                <label className="text-sm text-gray-400">Pitch ({pitch > 0 ? '+' : ''}{pitch} semitones)</label>
+                <label className="text-sm text-gray-400">
+                  Pitch ({pitch > 0 ? '+' : ''}{pitch} semitones)
+                  {isProcessingEnabled && ' - Enhanced'}
+                </label>
                 <input
                   type="range"
                   min="-12"
@@ -237,6 +300,32 @@ function Player({ currentTrack, onNextTrack, onPreviousTrack }) {
                   className="w-full h-1 bg-gray-700 rounded-full appearance-none cursor-pointer mt-2"
                 />
               </div>
+
+              {/* Equalizer Toggle */}
+              <button
+                className="w-full py-2 mt-2 bg-gray-800 rounded-lg text-white hover:bg-gray-700"
+                onClick={() => setShowEqualizer(!showEqualizer)}
+              >
+                {showEqualizer ? 'Hide Equalizer' : 'Show Equalizer'}
+              </button>
+
+              {/* Equalizer Component */}
+              {showEqualizer && (
+                <Equalizer
+                  audioContext={audioContext}
+                  sourceNode={sourceNode}
+                />
+              )}
+
+              {/* Audio Processor Integration */}
+              {isProcessingEnabled && (
+                <AudioProcessor 
+                  audioContext={audioContext}
+                  sourceNode={sourceNode}
+                  analyzer={analyzer}
+                  isPlaying={isPlaying}
+                />
+              )}
             </div>
           </div>
         )}
