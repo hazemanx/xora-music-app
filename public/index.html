@@ -2,11 +2,200 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>XORA Music App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    
+    <!-- PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="XORA Music" />
+    <meta name="application-name" content="XORA Music" />
+    <meta name="msapplication-TileColor" content="#000000" />
+    <meta name="msapplication-config" content="/browserconfig.xml" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    
+    <!-- Primary Meta Tags -->
+    <title>XORA Music - Advanced Audio Player</title>
+    <meta name="title" content="XORA Music - Advanced Audio Player" />
+    <meta name="description" content="Experience premium music playback with advanced audio processing, offline support, and vehicle mode." />
+    
+    <!-- Icons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16.png" />
+    <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#000000" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    
+    <!-- Apple Touch Icons -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-touch-icon-152.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png" />
+    <link rel="apple-touch-icon" sizes="167x167" href="/icons/apple-touch-icon-167.png" />
+    
+    <!-- Apple Splash Screens -->
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/iphone5.png"
+      media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/iphone6.png"
+      media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/iphoneplus.png"
+      media="(device-width: 621px) and (device-height: 1104px) and (-webkit-device-pixel-ratio: 3)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/iphonex.png"
+      media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/iphonexr.png"
+      media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/iphonexsmax.png"
+      media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/splash/ipad.png"
+      media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)"
+    />
+    
+    <!-- Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    
+    <!-- Preload Critical Assets -->
+    <link rel="preload" as="image" href="/icons/icon-192.png" />
+    <link rel="preload" as="style" href="/static/css/main.chunk.css" />
+    <link rel="preload" as="script" href="/static/js/main.chunk.js" />
+    
+    <!-- Critical CSS -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --sat: env(safe-area-inset-top);
+        --sar: env(safe-area-inset-right);
+        --sab: env(safe-area-inset-bottom);
+        --sal: env(safe-area-inset-left);
+      }
+      
+      html {
+        background-color: #000000;
+      }
+      
+      body {
+        margin: 0;
+        padding: var(--sat) var(--sar) var(--sab) var(--sal);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+          Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        background-color: #000000;
+        color: #ffffff;
+      }
+      
+      #root {
+        height: 100vh;
+        height: calc(100vh - var(--sat) - var(--sab));
+      }
+      
+      .loading-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #000000;
+        z-index: 9999;
+      }
+      
+      .loading-icon {
+        width: 48px;
+        height: 48px;
+        animation: pulse 1.5s infinite;
+      }
+      
+      @keyframes pulse {
+        0% { transform: scale(0.95); opacity: 0.5; }
+        50% { transform: scale(1.05); opacity: 0.8; }
+        100% { transform: scale(0.95); opacity: 0.5; }
+      }
+      
+      @media (display-mode: standalone) {
+        body {
+          overscroll-behavior-y: none;
+        }
+      }
+      
+      /* Dark mode support */
+      @media (prefers-color-scheme: dark) {
+        body {
+          background-color: #000000;
+          color: #ffffff;
+        }
+      }
+    </style>
   </head>
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <noscript>
+      <div style="padding: 20px; text-align: center;">
+        <img src="/icons/icon-192.png" alt="XORA Music" width="96" height="96" style="margin-bottom: 20px;" />
+        <h1>JavaScript Required</h1>
+        <p>
+          XORA Music needs JavaScript to provide you with the best music experience.
+          Please enable JavaScript and reload the page.
+        </p>
+      </div>
+    </noscript>
+    
     <div id="root"></div>
+    
+    <!-- Initial Loading Screen -->
+    <div id="loading" class="loading-container">
+      <img src="/icons/icon-192.png" alt="Loading..." class="loading-icon" />
+    </div>
+    
+    <!-- Offline Fallback -->
+    <div id="offline" style="display: none;" class="loading-container">
+      <div style="text-align: center;">
+        <img src="/icons/offline.png" alt="Offline" width="64" height="64" style="margin-bottom: 20px;" />
+        <h2>You're Offline</h2>
+        <p>Check your connection and try again.</p>
+      </div>
+    </div>
+    
+    <!-- PWA Install Prompt Script -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(registration => {
+              console.log('SW registered:', registration);
+            })
+            .catch(error => {
+              console.log('SW registration failed:', error);
+            });
+        });
+      }
+      
+      // Hide loading screen once app is loaded
+      window.addEventListener('load', () => {
+        const loadingScreen = document.getElementById('loading');
+        if (loadingScreen) {
+          loadingScreen.style.display = 'none';
+        }
+      });
+    </script>
   </body>
 </html>
