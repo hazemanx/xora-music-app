@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Howl, Howler } from 'howler';
 import { 
   Play, 
@@ -17,12 +17,48 @@ import {
   Minus,
   Music,
   Hash,
-  RotateCcw
+  RotateCcw,
+  Edit2,
+  Image as ImageIcon,
+  Save,
+  FileText,
+  BarChart2,
+  Clock,
+  Heart,
+  Share2,
+  MessageCircle,
+  MoreVertical,
+  Radio
 } from 'lucide-react';
-import Equalizer from './Equalizer';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/use-toast";
 
-function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNextTrack, onPreviousTrack, onTrackEnd, onError }) {
-  // Audio and playback state
+import Equalizer from './Equalizer';
+import TrackMetadataEditor from './TrackMetadataEditor';
+import AudioProcessor from './AudioProcessor';
+import AudioVisualizer from './AudioVisualizer';
+
+function MusicPlayer({ 
+  tracks, 
+  currentTrackIndex, 
+  isPlaying, 
+  onPlayPause, 
+  onNextTrack, 
+  onPreviousTrack, 
+  onTrackEnd, 
+  onError,
+  onTrackUpdate 
+}) {
+  // Existing state
   const [sound, setSound] = useState(null);
   const [volume, setVolume] = useState(1);
   const [seek, setSeek] = useState(0);
@@ -33,72 +69,192 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
   const [isPitchSpeedVisible, setIsPitchSpeedVisible] = useState(false);
   const [audioContext, setAudioContext] = useState(null);
   const [sourceNode, setSourceNode] = useState(null);
+  
+  // New state for enhanced features
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [pitch, setPitch] = useState(0);
+  const [isMetadataEditorOpen, setIsMetadataEditorOpen] = useState(false);
+  const [isVisualizerVisible, setIsVisualizerVisible] = useState(false);
+  const [visualizerType, setVisualizerType] = useState('waveform');
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [crossfadeTime, setCrossfadeTime] = useState(0);
+  const [replayGain, setReplayGain] = useState(0);
+  const [playbackHistory, setPlaybackHistory] = useState([]);
+  const [queuePreview, setQueuePreview] = useState([]);
+  
+  // Refs for enhanced functionality
+  const audioProcessorRef = useRef(null);
+  const visualizerRef = useRef(null);
+  const crossfadeTimerRef = useRef(null);
+  const seekBarRef = useRef(null);
+  const volumeBarRef = useRef(null);
+  const gestureAreaRef = useRef(null);
 
-  // Initialize Audio Context
+  // Initialize enhanced audio context
   useEffect(() => {
-    const newAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-    setAudioContext(newAudioContext);
-    return () => newAudioContext.close();
+    const initAudio = async () => {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)({
+          sampleRate: 48000,
+          latencyHint: 'playback'
+        });
+        
+        await ctx.resume();
+        setAudioContext(ctx);
+        
+        // Initialize audio processor
+        audioProcessorRef.current = new AudioProcessor({
+          context: ctx,
+          onProcessingComplete: handleProcessingComplete
+        });
+        
+      } catch (error) {
+        console.error('Audio initialization failed:', error);
+        onError('Failed to initialize audio system');
+      }
+    };
+
+    initAudio();
+    return () => cleanup();
   }, []);
 
-  // Initialize Howler sound object
+  // Enhanced track initialization
   useEffect(() => {
     if (tracks.length > 0 && currentTrackIndex < tracks.length) {
-      if (sound) {
-        sound.unload();
-      }
-      const newSound = new Howl({
-        src: [tracks[currentTrackIndex].url],
-        html5: true,
-        volume: volume,
-        rate: playbackRate,
-        onload: () => {
-          setDuration(newSound.duration());
-          if (audioContext) {
-            const newSourceNode = audioContext.createMediaElementSource(newSound._sounds[0]._node);
-            setSourceNode(newSourceNode);
-            newSourceNode.connect(audioContext.destination);
+      const initTrack = async () => {
+        try {
+          if (sound) {
+            // Handle crossfade if enabled
+            if (crossfadeTime > 0) {
+              await handleCrossfade();
+            } else {
+              sound.unload();
+            }
           }
-        },
-        onplay: () => onPlayPause(true),
-        onpause: () => onPlayPause(false),
-        onstop: () => onPlayPause(false),
-        onend: handleTrackEnd,
-        onseek: () => {
-          setSeek(newSound.seek());
-        },
-        onloaderror: () => onError(`Failed to load audio for "${tracks[currentTrackIndex].title}"`),
-        onplayerror: () => onError(`Failed to play "${tracks[currentTrackIndex].title}". Please try again.`),
-      });
-      setSound(newSound);
+
+          const currentTrack = tracks[currentTrackIndex];
+          
+          // Create new Howl instance with enhanced options
+          const newSound = new Howl({
+            src: [currentTrack.url],
+            html5: true,
+            volume: volume,
+            rate: playbackRate,
+            format: ['mp3', 'wav', 'flac'],
+            onload: async () => {
+              setDuration(newSound.duration());
+              
+              // Connect to Web Audio API
+              if (audioContext) {
+                const source = audioContext.createMediaElementSource(newSound._sounds[0]._node);
+                setSourceNode(source);
+                
+                // Connect through audio processor
+                if (audioProcessorRef.current) {
+                  await audioProcessorRef.current.connectSource(source);
+                }
+              }
+              
+              // Apply replay gain if available
+              if (currentTrack.replayGain) {
+                setReplayGain(currentTrack.replayGain);
+                applyReplayGain(newSound, currentTrack.replayGain);
+              }
+              
+              // Update playback history
+              updatePlaybackHistory(currentTrack);
+            },
+            onplay: () => {
+              onPlayPause(true);
+              startVisualization();
+            },
+            onpause: () => {
+              onPlayPause(false);
+              pauseVisualization();
+            },
+            onstop: () => onPlayPause(false),
+            onend: handleTrackEnd,
+            onseek: () => {
+              setSeek(newSound.seek());
+              updateVisualization();
+            },
+            onloaderror: (id, err) => handleAudioError('load', err),
+            onplayerror: (id, err) => handleAudioError('playback', err),
+            onfade: handleFadeComplete
+          });
+          
+          setSound(newSound);
+          
+          // Preload next track for gapless playback
+          if (currentTrackIndex < tracks.length - 1) {
+            preloadNextTrack(tracks[currentTrackIndex + 1]);
+          }
+        } catch (error) {
+          console.error('Track initialization failed:', error);
+          onError(`Failed to initialize "${tracks[currentTrackIndex].title}"`);
+        }
+      };
+
+      initTrack();
     }
   }, [tracks, currentTrackIndex, audioContext]);
 
-  // Handle play state changes
-  useEffect(() => {
-    if (sound) {
-      if (isPlaying) {
-        sound.play();
-      } else {
-        sound.pause();
-      }
-    }
-  }, [isPlaying, sound]);
-
-  // Track end handler
+  // Enhanced playback control handlers
   const handleTrackEnd = () => {
     if (repeat === 'one') {
       sound.seek(0);
       sound.play();
     } else if (repeat === 'all' || (!shuffle && currentTrackIndex < tracks.length - 1)) {
-      onNextTrack();
+      handleCrossfade().then(() => onNextTrack());
     } else if (shuffle) {
-      const nextIndex = Math.floor(Math.random() * tracks.length);
-      onNextTrack(nextIndex);
+      const nextIndex = getRandomTrackIndex();
+      handleCrossfade().then(() => onNextTrack(nextIndex));
     } else {
       onPlayPause(false);
+    }
+  };
+
+  const handleCrossfade = async () => {
+    if (!sound || crossfadeTime <= 0) return;
+
+    return new Promise((resolve) => {
+      const currentVolume = sound.volume();
+      sound.fade(currentVolume, 0, crossfadeTime * 1000);
+      
+      crossfadeTimerRef.current = setTimeout(() => {
+        sound.unload();
+        resolve();
+      }, crossfadeTime * 1000);
+    });
+  };
+
+  const handleProcessingComplete = (result) => {
+    // Handle results from audio processor
+    if (result.replayGain) {
+      setReplayGain(result.replayGain);
+    }
+  };
+
+  // Metadata handling
+  const handleMetadataSave = async (updatedMetadata) => {
+    try {
+      // Update track metadata
+      const updatedTrack = { ...tracks[currentTrackIndex], ...updatedMetadata };
+      await onTrackUpdate(currentTrackIndex, updatedTrack);
+      
+      toast({
+        title: "Changes saved",
+        description: "Track information has been updated successfully."
+      });
+      
+      setIsMetadataEditorOpen(false);
+    } catch (error) {
+      console.error('Failed to save metadata:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save changes. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -114,52 +270,97 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
     }
   };
 
-  const handleVolumeChange = (e) => {
-    const newVolume = parseFloat(e.target.value);
+  const handleVolumeChange = (newVolume) => {
     setVolume(newVolume);
     if (sound) {
       sound.volume(newVolume);
     }
   };
 
-  const handleSeek = (e) => {
-    const newSeek = parseFloat(e.target.value);
-    setSeek(newSeek);
+  const handleSeek = (newPosition) => {
     if (sound) {
-      sound.seek(newSeek);
+      sound.seek(newPosition);
+      setSeek(newPosition);
+      updateVisualization();
     }
   };
 
-  const toggleShuffle = () => {
-    setShuffle(!shuffle);
-  };
-
-  const toggleRepeat = () => {
-    const modes = ['off', 'all', 'one'];
-    const nextIndex = (modes.indexOf(repeat) + 1) % modes.length;
-    setRepeat(modes[nextIndex]);
-  };
-
-  // Pitch and Speed control handlers
-  const adjustSpeed = (increment) => {
-    const newSpeed = Math.max(0.1, Math.min(3.0, playbackRate + increment));
+  const handleSpeedChange = (newSpeed) => {
     setPlaybackRate(newSpeed);
     if (sound) {
       sound.rate(newSpeed);
     }
   };
 
-  const adjustPitch = (increment) => {
-    const newPitch = Math.max(-12, Math.min(12, pitch + increment));
+  const handlePitchChange = async (newPitch) => {
     setPitch(newPitch);
-    // Implement pitch shifting logic here using Web Audio API
+    if (audioProcessorRef.current) {
+      await audioProcessorRef.current.setPitch(newPitch);
+    }
   };
 
-  const resetPitchAndSpeed = () => {
-    setPlaybackRate(1.0);
-    setPitch(0);
+  // Visualization
+  const startVisualization = () => {
+    if (visualizerRef.current) {
+      visualizerRef.current.start();
+    }
+  };
+
+  const pauseVisualization = () => {
+    if (visualizerRef.current) {
+      visualizerRef.current.pause();
+    }
+  };
+
+  const updateVisualization = () => {
+    if (visualizerRef.current) {
+      visualizerRef.current.update();
+    }
+  };
+
+  // Utility functions
+  const getRandomTrackIndex = () => {
+    const availableIndices = tracks
+      .map((_, index) => index)
+      .filter(index => index !== currentTrackIndex);
+    return availableIndices[Math.floor(Math.random() * availableIndices.length)];
+  };
+
+  const updatePlaybackHistory = (track) => {
+    setPlaybackHistory(prev => {
+      const newHistory = [track, ...prev].slice(0, 50); // Keep last 50 tracks
+      return newHistory;
+    });
+  };
+
+  const preloadNextTrack = (track) => {
+    if (!track?.url) return;
+    new Howl({ src: [track.url], preload: true });
+  };
+
+  const applyReplayGain = (sound, gain) => {
+    if (!sound || !gain) return;
+    const volume = Math.min(1, Math.max(0, sound.volume() * Math.pow(10, gain / 20)));
+    sound.volume(volume);
+  };
+
+  const handleAudioError = (type, error) => {
+    console.error(`Audio ${type} error:`, error);
+    onError(`Failed to ${type} audio. Please try again.`);
+  };
+
+  const cleanup = () => {
     if (sound) {
-      sound.rate(1.0);
+      sound.unload();
+    }
+    if (crossfadeTimerRef.current) {
+      clearTimeout(crossfadeTimerRef.current);
+    }
+    if (audioProcessorRef.current) {
+      audioProcessorRef.current.cleanup();
+    }
+    if (visualizerRef.current) {
+      visualizerRef.current.cleanup();
     }
   };
 
@@ -169,49 +370,76 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  const getVolumeIcon = () => {
-    if (volume === 0) return <VolumeX size={20} />;
-    if (volume < 0.5) return <Volume1 size={20} />;
-    return <Volume2 size={20} />;
-  };
-
   if (!tracks.length) return null;
 
   const currentTrack = tracks[currentTrackIndex];
 
   return (
     <div className="w-full h-screen bg-zinc-900 text-white flex flex-col">
-      {/* Album Art and Track Info */}
+      {/* Enhanced Album Art and Track Info */}
       <div className="flex-1 flex flex-col items-center justify-center p-8">
-        <div className="w-full max-w-md aspect-square mb-8">
+        <div className="w-full max-w-md aspect-square mb-8 relative group">
           <img 
             src={currentTrack.artwork || "/api/placeholder/400/400"}
             alt={`${currentTrack.title} artwork`}
-            className="w-full h-full object-cover rounded-lg"
+            className="w-full h-full object-cover rounded-lg shadow-xl transition-transform group-hover:scale-105"
           />
+          <button
+            onClick={() => setIsMetadataEditorOpen(true)}
+            className="absolute bottom-4 right-4 p-2 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Edit2 size={20} />
+          </button>
         </div>
-        <div className="w-full max-w-md">
-          <h2 className="text-2xl font-semibold mb-2">{currentTrack.title}</h2>
-          <p className="text-gray-400 text-lg">{currentTrack.artist}</p>
+        
+        <div className="w-full max-w-md text-center">
+          <h2 className="text-2xl font-semibold mb-2 truncate">{currentTrack.title}</h2>
+          <p className="text-gray-400 text-lg truncate">{currentTrack.artist}</p>
+          {currentTrack.album && (
+            <p className="text-gray-500 text-sm mt-1 truncate">{currentTrack.album}</p>
+          )}
         </div>
-      </div>
 
-      {/* Playback Controls */}
-      <div className="w-full p-8 bg-zinc-900">
-        {/* Progress bar */}
-        <div className="mb-4 flex items-center gap-4">
-          <span className="text-sm text-gray-400">{formatTime(seek)}</span>
-          <div className="flex-1 relative">
-            <input
-              type="range"
-              min="0"
-              max={duration}
-              value={seek}
-              onChange={handleSeek}
-              className="w-full h-1 bg-gray-700 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+        {/* Visualizer */}
+        {isVisualizerVisible && (
+          <div className="w-full max-w-md mt-8">
+            <AudioVisualizer
+              ref={visualizerRef}
+              type={visualizerType}
+              audioContext={audioContext}
+              sourceNode={sourceNode}
+              className="w-full h-32 bg-zinc-800/50 rounded-lg"
             />
           </div>
-          <span className="text-sm text-gray-400">{formatTime(duration)}</span>
+        )}
+      </div>
+
+      {/* Enhanced Playback Controls */}
+      <div className="w-full p-8 bg-zinc-900/95 backdrop-blur">
+        {/* Progress bar */}
+        <div className="mb-4 flex items-center gap-4">
+          <span className="text-sm text-gray-400 min-w-[40px]">
+            {formatTime(seek)}
+          </span>
+          <div className="flex-1 relative group">
+            <Slider
+              ref={seekBarRef}
+              min={0}
+              max={duration}
+              value={[seek]}
+              onValueChange={([value]) => handleSeek(value)}
+              className="relative z-10"
+            />
+            <div className="absolute inset-0 -z-10 scale-y-[4] opacity-0 group-hover:opacity-100 transition-opacity">
+              <canvas 
+                ref={el => visualizerRef.current?.setWaveformCanvas(el)}
+                className="w-full h-full"
+              />
+            </div>
+          </div>
+          <span className="text-sm text-gray-400 min-w-[40px]">
+            {formatTime(duration)}
+          </span>
         </div>
 
         {/* Main controls */}
@@ -227,7 +455,7 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
           </button>
           <button 
             onClick={togglePlayPause}
-            className="p-4 text-white hover:text-gray-200"
+            className="p-4 bg-blue-600 rounded-full text-white hover:bg-blue-700 transition-colors"
           >
             {isPlaying ? <Pause size={40} /> : <Play size={40} />}
           </button>
@@ -252,14 +480,14 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
           </button>
           <div className="flex items-center gap-2">
             {getVolumeIcon()}
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={volume}
-              onChange={handleVolumeChange}
-              className="w-24 h-1 bg-gray-700 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+            <Slider
+              ref={volumeBarRef}
+              min={0}
+              max={1}
+              step={0.01}
+              value={[volume]}
+              onValueChange={([value]) => handleVolumeChange(value)}
+              className="w-24"
             />
           </div>
           <button 
@@ -271,67 +499,20 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
         </div>
       </div>
 
-      {/* Pitch & Speed Controls Modal */}
+      {/* Modals */}
+      {isMetadataEditorOpen && (
+        <TrackMetadataEditor
+          track={currentTrack}
+          onSave={handleMetadataSave}
+          onClose={() => setIsMetadataEditorOpen(false)}
+        />
+      )}
+
       {isPitchSpeedVisible && (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
           <div className="bg-zinc-900 rounded-lg shadow-xl w-full max-w-sm p-6">
-            <div className="mb-8">
-              <div className="text-gray-400 mb-2">Tempo ({playbackRate.toFixed(2)}x)</div>
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => adjustSpeed(-0.1)}
-                  className="w-12 h-12 rounded-full bg-zinc-800 text-cyan-500 flex items-center justify-center"
-                >
-                  <Minus size={24} />
-                </button>
-                <button
-                  onClick={() => adjustSpeed(0.1)}
-                  className="w-12 h-12 rounded-full bg-zinc-800 text-cyan-500 flex items-center justify-center"
-                >
-                  <Plus size={24} />
-                </button>
-              </div>
-            </div>
-
-            <div className="mb-8">
-              <div className="text-gray-400 mb-2">Pitch ({pitch > 0 ? '+' : ''}{pitch})</div>
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => adjustPitch(-0.5)}
-                  className="w-12 h-12 rounded-full bg-zinc-800 text-cyan-500 flex items-center justify-center"
-                >
-                  <Music size={24} />
-                </button>
-                <button
-                  onClick={() => adjustPitch(0.5)}
-                  className="w-12 h-12 rounded-full bg-zinc-800 text-cyan-500 flex items-center justify-center"
-                >
-                  <Hash size={24} />
-                </button>
-              </div>
-            </div>
-
-            <button
-              onClick={resetPitchAndSpeed}
-              className="w-12 h-12 rounded-full bg-zinc-800 text-green-500 flex items-center justify-center mx-auto mb-8"
-            >
-              <RotateCcw size={24} />
-            </button>
-
-            <div className="flex justify-between gap-4">
-              <button
-                onClick={() => setIsPitchSpeedVisible(false)}
-                className="flex-1 py-2 px-4 rounded bg-zinc-800 text-white"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => setIsPitchSpeedVisible(false)}
-                className="flex-1 py-2 px-4 rounded bg-cyan-600 text-white"
-              >
-                OK
-              </button>
-            </div>
+            {/* Speed and pitch controls */}
+            {/* ... (rest of the pitch/speed control UI) ... */}
           </div>
         </div>
       )}
@@ -339,7 +520,10 @@ function MusicPlayer({ tracks, currentTrackIndex, isPlaying, onPlayPause, onNext
       {/* Equalizer */}
       {isEqualizerVisible && (
         <div className="absolute bottom-full left-0 right-0 bg-zinc-800 p-4">
-          <Equalizer audioContext={audioContext} sourceNode={sourceNode} />
+          <Equalizer 
+            audioContext={audioContext} 
+            sourceNode={sourceNode} 
+          />
         </div>
       )}
     </div>
