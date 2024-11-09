@@ -6,8 +6,6 @@
     "@apideck/better-ajv-errors": "^0.3.0",
     "@heroicons/react": "^2.0.18",
     "@react-spring/web": "^9.7.3",
-    "@testing-library/jest-dom": "^5.17.0",
-    "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
     "autoprefixer": "^10.4.16",
     "firebase": "^11.0.1",
@@ -38,6 +36,9 @@
   },
   "devDependencies": {
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.0.1",
+    "jest": "^27.5.1",
     "postcss-preset-env": "^9.3.0"
   },
   "scripts": {
