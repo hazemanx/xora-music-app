@@ -45,8 +45,9 @@ import { toast } from "../ui/use-toast";
 import { AudioProcessorEngine } from './Audio/AudioProcessor';
 import Equalizer from './Equalizer';
 import TrackMetadataEditor from './TrackMetadataEditor';
-import AudioProcessor from './Audio/AudioProcessor';
 import AudioVisualizer from './AudioVisualizer';
+
+import { useAudioContext } from '../hooks/useAudioContext';
 
 function MusicPlayer({ 
   tracks, 
@@ -104,16 +105,27 @@ function MusicPlayer({
   useEffect(() => {
     if (!audioContext) return;
     
-    audioProcessorRef.current = new AudioProcessorEngine({
-      context: audioContext,
-      onProcessingComplete: handleProcessingComplete
-    });
+    try {
+      audioProcessorRef.current = new AudioProcessorEngine({
+        context: audioContext,
+        onProcessingComplete: handleProcessingComplete
+      });
 
-    return () => {
-      audioProcessorRef.current?.cleanup();
-      if (sound) sound.unload();
-      if (crossfadeTimerRef.current) clearTimeout(crossfadeTimerRef.current);
-    };
+      return () => {
+        if (audioProcessorRef.current?.cleanup) {
+          audioProcessorRef.current.cleanup();
+        }
+        if (sound) {
+          sound.unload();
+        }
+        if (crossfadeTimerRef.current) {
+          clearTimeout(crossfadeTimerRef.current);
+        }
+      };
+    } catch (error) {
+      console.error('Failed to initialize audio processor:', error);
+      onError('Failed to initialize audio processor');
+    }
   }, [audioContext]);
 
   // Track initialization
