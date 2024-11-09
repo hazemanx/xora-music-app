@@ -515,8 +515,77 @@ function MusicPlayer({
       {isPitchSpeedVisible && (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
           <div className="bg-zinc-900 rounded-lg shadow-xl w-full max-w-sm p-6">
-            {/* Speed and pitch controls */}
-            {/* ... (rest of the pitch/speed control UI) ... */}
+            <h3 className="text-lg font-semibold mb-4">Playback Settings</h3>
+            
+            {/* Speed control */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">
+                Playback Speed: {playbackRate.toFixed(2)}x
+              </label>
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => handleSpeedChange(Math.max(0.5, playbackRate - 0.1))}
+                >
+                  <Minus size={16} />
+                </Button>
+                <Slider
+                  min={0.5}
+                  max={2}
+                  step={0.1}
+                  value={[playbackRate]}
+                  onValueChange={([value]) => handleSpeedChange(value)}
+                  className="flex-1"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => handleSpeedChange(Math.min(2, playbackRate + 0.1))}
+                >
+                  <Plus size={16} />
+                </Button>
+              </div>
+            </div>
+
+            {/* Pitch control */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">
+                Pitch Adjustment: {pitch > 0 ? '+' : ''}{pitch} semitones
+              </label>
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => handlePitchChange(Math.max(-12, pitch - 1))}
+                >
+                  <Minus size={16} />
+                </Button>
+                <Slider
+                  min={-12}
+                  max={12}
+                  step={1}
+                  value={[pitch]}
+                  onValueChange={([value]) => handlePitchChange(value)}
+                  className="flex-1"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => handlePitchChange(Math.min(12, pitch + 1))}
+                >
+                  <Plus size={16} />
+                </Button>
+              </div>
+            </div>
+
+            {/* Close button */}
+            <Button 
+              className="w-full"
+              onClick={() => setIsPitchSpeedVisible(false)}
+            >
+              Close
+            </Button>
           </div>
         </div>
       )}
