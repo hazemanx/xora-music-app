@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Howl, Howler } from 'howler';
 import { 
   Play, 
@@ -37,14 +37,15 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Slider } from "@/components/ui/slider";
-import { Button } from "@/components/ui/button";
-import { toast } from "@/components/ui/use-toast";
+} from "../ui/dropdown-menu";
+import { Slider } from "../ui/slider";
+import { Button } from "../ui/button";
+import { toast } from "../ui/use-toast";
 
+import { AudioProcessorEngine } from './Audio/AudioProcessor';
 import Equalizer from './Equalizer';
 import TrackMetadataEditor from './TrackMetadataEditor';
-import AudioProcessor from './AudioProcessor';
+import AudioProcessor from './Audio/AudioProcessor';
 import AudioVisualizer from './AudioVisualizer';
 
 function MusicPlayer({ 
@@ -64,25 +65,34 @@ function MusicPlayer({
   const [seek, setSeek] = useState(0);
   const [duration, setDuration] = useState(0);
   const [shuffle, setShuffle] = useState(false);
-  const [repeat, setRepeat] = useState('off'); // 'off', 'all', 'one'
+  const [repeat, setRepeat] = useState('off');
   const [isEqualizerVisible, setIsEqualizerVisible] = useState(false);
   const [isPitchSpeedVisible, setIsPitchSpeedVisible] = useState(false);
-  const [audioContext, setAudioContext] = useState(null);
-  const [sourceNode, setSourceNode] = useState(null);
   
-  // New state for enhanced features
+  // Audio Context state
+  const { 
+    audioContext, 
+    sourceNode,
+    gainNode,
+    analyzer,
+    isInitialized,
+    connectSource,
+    getAnalyzerData 
+  } = useAudioContext();
+  
+  // Enhanced features state
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [pitch, setPitch] = useState(0);
   const [isMetadataEditorOpen, setIsMetadataEditorOpen] = useState(false);
   const [isVisualizerVisible, setIsVisualizerVisible] = useState(false);
   const [visualizerType, setVisualizerType] = useState('waveform');
   const [isFavorite, setIsFavorite] = useState(false);
-  const [crossfadeTime, setCrossfadeTime] = useState(0);
+  const [crossfadeTime, setCrossfadeTime] = useState(2);
+  const [nextSound, setNextSound] = useState(null);
   const [replayGain, setReplayGain] = useState(0);
   const [playbackHistory, setPlaybackHistory] = useState([]);
-  const [queuePreview, setQueuePreview] = useState([]);
   
-  // Refs for enhanced functionality
+  // Refs
   const audioProcessorRef = useRef(null);
   const visualizerRef = useRef(null);
   const crossfadeTimerRef = useRef(null);
@@ -90,114 +100,81 @@ function MusicPlayer({
   const volumeBarRef = useRef(null);
   const gestureAreaRef = useRef(null);
 
-  // Initialize enhanced audio context
+  // Initialize audio processor
   useEffect(() => {
-    const initAudio = async () => {
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)({
-          sampleRate: 48000,
-          latencyHint: 'playback'
-        });
-        
-        await ctx.resume();
-        setAudioContext(ctx);
-        
-        // Initialize audio processor
-        audioProcessorRef.current = new AudioProcessor({
-          context: ctx,
-          onProcessingComplete: handleProcessingComplete
-        });
-        
-      } catch (error) {
-        console.error('Audio initialization failed:', error);
-        onError('Failed to initialize audio system');
-      }
+    if (!audioContext) return;
+    
+    audioProcessorRef.current = new AudioProcessorEngine({
+      context: audioContext,
+      onProcessingComplete: handleProcessingComplete
+    });
+
+    return () => {
+      audioProcessorRef.current?.cleanup();
+      if (sound) sound.unload();
+      if (crossfadeTimerRef.current) clearTimeout(crossfadeTimerRef.current);
     };
+  }, [audioContext]);
 
-    initAudio();
-    return () => cleanup();
-  }, []);
-
-  // Enhanced track initialization
+  // Track initialization
   useEffect(() => {
-    if (tracks.length > 0 && currentTrackIndex < tracks.length) {
-      const initTrack = async () => {
-        try {
-          if (sound) {
-            // Handle crossfade if enabled
-            if (crossfadeTime > 0) {
-              await handleCrossfade();
-            } else {
-              sound.unload();
-            }
-          }
+    if (!tracks.length || currentTrackIndex >= tracks.length) return;
 
-          const currentTrack = tracks[currentTrackIndex];
-          
-          // Create new Howl instance with enhanced options
-          const newSound = new Howl({
-            src: [currentTrack.url],
-            html5: true,
-            volume: volume,
-            rate: playbackRate,
-            format: ['mp3', 'wav', 'flac'],
-            onload: async () => {
-              setDuration(newSound.duration());
-              
-              // Connect to Web Audio API
-              if (audioContext) {
-                const source = audioContext.createMediaElementSource(newSound._sounds[0]._node);
-                setSourceNode(source);
-                
-                // Connect through audio processor
-                if (audioProcessorRef.current) {
-                  await audioProcessorRef.current.connectSource(source);
-                }
-              }
+    const initTrack = async () => {
+      try {
+        if (sound) {
+          if (crossfadeTime > 0) {
+            await handleCrossfade();
+          } else {
+            sound.unload();
+          }
+        }
+
+        const currentTrack = tracks[currentTrackIndex];
+        const newSound = new Howl({
+          src: [currentTrack.url],
+          html5: true,
+          volume: volume,
+          rate: playbackRate,
+          format: ['mp3', 'wav', 'flac'],
+          onload: () => {
+            setDuration(newSound.duration());
+            if (isInitialized && newSound._sounds[0]?._node) {
+              connectSource(newSound._sounds[0]._node);
               
               // Apply replay gain if available
               if (currentTrack.replayGain) {
                 setReplayGain(currentTrack.replayGain);
                 applyReplayGain(newSound, currentTrack.replayGain);
               }
-              
-              // Update playback history
-              updatePlaybackHistory(currentTrack);
-            },
-            onplay: () => {
-              onPlayPause(true);
-              startVisualization();
-            },
-            onpause: () => {
-              onPlayPause(false);
-              pauseVisualization();
-            },
-            onstop: () => onPlayPause(false),
-            onend: handleTrackEnd,
-            onseek: () => {
-              setSeek(newSound.seek());
-              updateVisualization();
-            },
-            onloaderror: (id, err) => handleAudioError('load', err),
-            onplayerror: (id, err) => handleAudioError('playback', err),
-            onfade: handleFadeComplete
-          });
-          
-          setSound(newSound);
-          
-          // Preload next track for gapless playback
-          if (currentTrackIndex < tracks.length - 1) {
-            preloadNextTrack(tracks[currentTrackIndex + 1]);
+            }
+          },
+          onplay: () => onPlayPause(true),
+          onpause: () => onPlayPause(false),
+          onend: onTrackEnd,
+          onseek: () => setSeek(newSound.seek()),
+          onstop: () => {
+            setSeek(0);
+            onPlayPause(false);
           }
-        } catch (error) {
-          console.error('Track initialization failed:', error);
-          onError(`Failed to initialize "${tracks[currentTrackIndex].title}"`);
-        }
-      };
+        });
 
-      initTrack();
-    }
-  }, [tracks, currentTrackIndex, audioContext]);
+        setSound(newSound);
+        
+        // Update playback history
+        setPlaybackHistory(prev => [...prev, { 
+          trackId: currentTrack.id, 
+          timestamp: Date.now() 
+        }]);
+
+      } catch (error) {
+        console.error('Track initialization failed:', error);
+        onError('Failed to load track');
+      }
+    };
+
+    initTrack();
+  }, [tracks, currentTrackIndex, crossfadeTime, volume, playbackRate, isInitialized]);
 
   // Enhanced playback control handlers
   const handleTrackEnd = () => {
@@ -214,19 +191,34 @@ function MusicPlayer({
     }
   };
 
-  const handleCrossfade = async () => {
+  const handleCrossfade = useCallback(async () => {
     if (!sound || crossfadeTime <= 0) return;
-
-    return new Promise((resolve) => {
-      const currentVolume = sound.volume();
-      sound.fade(currentVolume, 0, crossfadeTime * 1000);
-      
-      crossfadeTimerRef.current = setTimeout(() => {
-        sound.unload();
-        resolve();
-      }, crossfadeTime * 1000);
+    
+    // Create next track's sound
+    const nextTrack = tracks[currentTrackIndex + 1];
+    if (!nextTrack) return;
+    
+    const fadeOutVolume = sound.volume();
+    const nextSound = new Howl({
+      src: [nextTrack.url],
+      html5: true,
+      volume: 0,
+      onload: () => {
+        // Start crossfade
+        nextSound.play();
+        nextSound.fade(0, fadeOutVolume, crossfadeTime * 1000);
+        sound.fade(fadeOutVolume, 0, crossfadeTime * 1000);
+        
+        // Cleanup after fade
+        setTimeout(() => {
+          sound.unload();
+          setSound(nextSound);
+        }, crossfadeTime * 1000);
+      }
     });
-  };
+    
+    setNextSound(nextSound);
+  }, [sound, crossfadeTime, tracks, currentTrackIndex]);
 
   const handleProcessingComplete = (result) => {
     // Handle results from audio processor
