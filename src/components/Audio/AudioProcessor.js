@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Slider } from '@/components/ui/slider';
+import { Slider } from '../../components/ui/slider';
 import {
   AlertCircle,
   Mic,
@@ -283,12 +283,108 @@ const AudioProcessor = ({ audioSource, onProcessingComplete }) => {
   );
 };
 
-// Helper functions (implementations would go here)
-const createHannWindow = (size) => {/* Implementation */};
-const processGrain = (input, output, ratio, window) => {/* Implementation */};
-const processTimeStretch = (input, output, ratio, buffer, position) => {/* Implementation */};
-const generateImpulseResponse = async (context, decay, preDelay) => {/* Implementation */};
-const drawWaveform = (ctx, data) => {/* Implementation */};
-const drawSpectrum = (ctx, data) => {/* Implementation */};
+// Helper function implementations
+const createHannWindow = (size) => {
+  const window = new Float32Array(size);
+  for (let i = 0; i < size; i++) {
+    window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (size - 1)));
+  }
+  return window;
+};
+
+const processGrain = (input, output, ratio, window) => {
+  const size = input.length;
+  for (let i = 0; i < size; i++) {
+    const index = Math.floor(i * ratio);
+    if (index < size) {
+      output[i] = input[index] * window[i];
+    }
+  }
+};
+
+const processTimeStretch = (input, output, ratio, buffer, position) => {
+  const size = input.length;
+  for (let i = 0; i < size; i++) {
+    const readIndex = Math.floor(position + i * ratio);
+    if (readIndex < buffer.length) {
+      output[i] = buffer[readIndex];
+    }
+  }
+  position = (position + size * ratio) % buffer.length;
+};
+
+const generateImpulseResponse = async (context, decay, preDelay) => {
+  const sampleRate = context.sampleRate;
+  const length = sampleRate * decay;
+  const impulse = context.createBuffer(2, length, sampleRate);
+  
+  for (let channel = 0; channel < 2; channel++) {
+    const channelData = impulse.getChannelData(channel);
+    for (let i = 0; i < length; i++) {
+      channelData[i] = (Math.random() * 2 - 1) * 
+        Math.exp(-i / (decay * sampleRate));
+    }
+  }
+  
+  return impulse;
+};
+
+const drawWaveform = (ctx, data) => {
+  const width = ctx.canvas.width;
+  const height = ctx.canvas.height;
+  const step = Math.ceil(data.length / width);
+  
+  ctx.fillStyle = 'rgb(20, 20, 30)';
+  ctx.fillRect(0, 0, width, height);
+  
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgb(100, 200, 255)';
+  ctx.lineWidth = 2;
+  
+  for (let i = 0; i < width; i++) {
+    const value = data[i * step] / 128.0;
+    const y = (value * height / 2) + height / 2;
+    if (i === 0) {
+      ctx.moveTo(i, y);
+    } else {
+      ctx.lineTo(i, y);
+    }
+  }
+  
+  ctx.stroke();
+};
+
+const drawSpectrum = (ctx, data) => {
+  const width = ctx.canvas.width;
+  const height = ctx.canvas.height;
+  const barWidth = width / data.length;
+  
+  ctx.fillStyle = 'rgb(20, 20, 30)';
+  ctx.fillRect(0, 0, width, height);
+  
+  for (let i = 0; i < data.length; i++) {
+    const value = data[i] / 255.0;
+    const barHeight = value * height;
+    
+    const hue = (i / data.length) * 240;
+    ctx.fillStyle = `hsla(${hue}, 100%, 50%, 0.8)`;
+    ctx.fillRect(i * barWidth, height - barHeight, barWidth, barHeight);
+  }
+};
+
+// Add missing disconnectNodes function
+const disconnectNodes = () => {
+  if (sourceNodeRef.current) {
+    sourceNodeRef.current.disconnect();
+  }
+  if (pitchNodeRef.current) {
+    pitchNodeRef.current.disconnect();
+  }
+  if (analyzerRef.current) {
+    analyzerRef.current.disconnect();
+  }
+  equalizerNodesRef.current.forEach(node => node?.disconnect());
+  Object.values(effectsChainRef.current).forEach(node => node?.disconnect());
+};
 
 export default AudioProcessor;
