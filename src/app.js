@@ -4,6 +4,7 @@ import { useAudioContext } from './hooks/useAudioContext';
 import useOfflineDetection from './hooks/useOfflineDetection';
 import usePlaybackState from './hooks/usePlaybackState';
 import { DragDropContext } from 'react-beautiful-dnd';
+import { Car, Settings } from 'lucide-react';
 
 // Components
 import Navbar from './components/Navbar';
@@ -11,14 +12,16 @@ import Auth from './components/Auth';
 import MusicPlayer from './components/MusicPlayer';
 import TrackList from './components/TrackList';
 import Playlists from './components/Playlists';
-import SearchBar from './components/SearchBar';
+import SearchBar from './components/searchbar';
 import PlaylistViewer from './components/PlaylistViewer';
 import QueueViewer from './components/QueueViewer';
 import InstallPrompt from './components/InstallPrompt';
 import TrackMetadataEditor from './components/TrackMetadataEditor';
 import OfflineIndicator from './components/OfflineIndicator';
-import AudioProcessor from './components/audio/AudioProcessor';
+import AudioProcessor from './components/Audio/AudioProcessor';
 import ErrorBoundary from './components/ErrorBoundary';
+import VehicleMode from './components/VehicleMode';
+import SettingsPanel from './components/SettingsPanel';
 
 // Constants and Utils
 import { REPEAT_MODES, INITIAL_TRACKS } from './constants';
@@ -189,6 +192,15 @@ function App() {
     }
   }, [repeat, currentTrackIndex, queue.length, handleNextTrack, setIsPlaying]);
 
+  // Add new state
+  const [isVehicleMode, setIsVehicleMode] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [volume, setVolume] = useState(1);
+
+  const handleVolumeChange = useCallback((newVolume) => {
+    setVolume(newVolume);
+  }, []);
+
   return (
     <ErrorBoundary>
       <div className="App min-h-screen bg-gradient-to-b from-gray-900 to-black text-white">
@@ -306,6 +318,41 @@ function App() {
         />
 
         <InstallPrompt />
+
+        {/* Vehicle Mode Toggle Button */}
+        <button
+          onClick={() => setIsVehicleMode(true)}
+          className="fixed bottom-24 right-4 p-3 rounded-full bg-blue-600 text-white shadow-lg"
+          aria-label="Enable Vehicle Mode"
+        >
+          <Car size={24} />
+        </button>
+
+        {/* Vehicle Mode Overlay */}
+        {isVehicleMode && (
+          <VehicleMode
+            currentTrack={tracks[currentTrackIndex]}
+            isPlaying={isPlaying}
+            onPlayPause={handlePlayPause}
+            onNext={handleNextTrack}
+            onPrevious={handlePreviousTrack}
+            onExit={() => setIsVehicleMode(false)}
+            volume={volume}
+            onVolumeChange={handleVolumeChange}
+          />
+        )}
+
+        <button
+          onClick={() => setIsSettingsOpen(true)}
+          className="p-2 hover:bg-gray-800 rounded-full"
+          aria-label="Open Settings"
+        >
+          <Settings size={24} />
+        </button>
+
+        {isSettingsOpen && (
+          <SettingsPanel onClose={() => setIsSettingsOpen(false)} />
+        )}
       </div>
     </ErrorBoundary>
   );

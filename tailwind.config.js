@@ -5,11 +5,20 @@ module.exports = {
   ],
   theme: {
     extend: {
-      colors: {
-        'app-black': '#121212',
-        'app-dark': '#181818',
-        'app-light': '#282828',
+      fontFamily: {
+        sans: ['Space Grotesk', 'system-ui', 'sans-serif'],
       },
+      colors: {
+        cyber: {
+          black: '#1C1C1C',
+          gray: '#2F2F2F',
+          silver: '#E2E2E2',
+          accent: '#FF0033'
+        }
+      },
+      animation: {
+        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+      }
     },
   },
   plugins: [],

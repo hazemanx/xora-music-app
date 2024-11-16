@@ -1,1 +1,40 @@
- 
+name: XORA Music App CI/CD
+
+on:
+  push:
+    branches: [ main, develop, fix/* ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  NODE_VERSION: '18.x'
+  REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions: write-all
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm ci
+
+    - name: Build Project
+      run: npm run build
+      env:
+        CI: false
+        REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+
+    - name: Debug Secrets
+      run: |
+        echo "Checking secrets availability..."
+        echo "FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_XORA_MUSIC != '' }}"
+        echo "REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL != '' }}"

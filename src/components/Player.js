@@ -14,7 +14,9 @@ import {
 } from '@heroicons/react/solid';
 import Equalizer from './Equalizer';
 import { useAudioContext } from '../hooks/useAudioContext';
-import { AudioProcessor } from './audio/AudioProcessor';
+import AudioProcessor from './Audio/AudioProcessor';
+import { useGestures } from '../hooks/useGestures';
+import { motion, AnimatePresence } from 'framer-motion';
 
 function Player({ currentTrack, onNextTrack, onPreviousTrack }) {
   // Core playback state
@@ -170,167 +172,148 @@ function Player({ currentTrack, onNextTrack, onPreviousTrack }) {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  // Add new state for gestures
+  const [miniPlayerHeight, setMiniPlayerHeight] = useState(0);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [dragY, setDragY] = useState(0);
+
+  // Gesture handlers
+  const { handlers } = useGestures({
+    onSwipeUp: (velocity) => {
+      if (!isExpanded) {
+        setIsExpanded(true);
+        // Adjust animation speed based on velocity
+        const duration = Math.min(0.5, 1 / velocity);
+        setExpandAnimation({ duration });
+      }
+    },
+    onSwipeDown: (velocity) => {
+      if (isExpanded) {
+        setIsExpanded(false);
+        const duration = Math.min(0.5, 1 / velocity);
+        setExpandAnimation({ duration });
+      }
+    },
+    onSwipeLeft: () => {
+      onNextTrack?.();
+    },
+    onSwipeRight: () => {
+      onPreviousTrack?.();
+    },
+    onDoubleTap: () => {
+      onPlayPause(!isPlaying);
+    }
+  });
+
+  // Animation variants
+  const variants = {
+    mini: {
+      height: miniPlayerHeight,
+      y: window.innerHeight - miniPlayerHeight,
+      transition: { type: 'spring', stiffness: 300, damping: 30 }
+    },
+    full: {
+      height: '100%',
+      y: 0,
+      transition: { type: 'spring', stiffness: 300, damping: 30 }
+    }
+  };
+
+  // Initialize audio processor
+  useEffect(() => {
+    if (!audioContext) return;
+    // Initialize audio processor
+    audioProcessorRef.current = new AudioProcessor({
+      context: audioContext,
+      onProcessingComplete: handleProcessingComplete
+    });
+  }, [audioContext]);
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-black text-white">
-      <div className="max-w-screen-xl mx-auto p-4">
-        {/* Track Info */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-4">
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-x-0 bottom-0 bg-black"
+        initial="mini"
+        animate={isExpanded ? 'full' : 'mini'}
+        variants={variants}
+        drag="y"
+        dragConstraints={{ top: 0, bottom: window.innerHeight - miniPlayerHeight }}
+        onDragEnd={(e, info) => {
+          const shouldExpand = info.offset.y < -50 || 
+                             (isExpanded && info.offset.y < window.innerHeight / 3);
+          setIsExpanded(shouldExpand);
+        }}
+        {...handlers}
+      >
+        {/* Mini Player */}
+        {!isExpanded && (
+          <div className="flex items-center p-4 h-20">
             <img 
-              src={currentTrack?.artwork || "/api/placeholder/50/50"} 
-              alt="Album cover" 
-              className="w-16 h-16 rounded-lg"
+              src={currentTrack?.artwork} 
+              alt="Album Art"
+              className="w-12 h-12 rounded-lg mr-4"
             />
-            <div>
-              <h3 className="font-semibold text-lg">{currentTrack?.title || 'No Track Selected'}</h3>
-              <p className="text-gray-400">{currentTrack?.artist || 'Unknown Artist'}</p>
+            <div className="flex-1">
+              <h3 className="font-medium truncate">{currentTrack?.title}</h3>
+              <p className="text-sm text-gray-400 truncate">{currentTrack?.artist}</p>
             </div>
-          </div>
-          
-          <div className="flex items-center space-x-4">
-            <button 
-              className="p-2 hover:bg-gray-800 rounded-full"
-              onClick={() => setShowAdvancedControls(!showAdvancedControls)}
+            <button
+              onClick={() => onPlayPause(!isPlaying)}
+              className="p-2 rounded-full bg-blue-600"
             >
-              <AdjustmentsIcon className="h-6 w-6" />
-            </button>
-            <button className="p-2 hover:bg-gray-800 rounded-full">
-              <ShareIcon className="h-6 w-6" />
-            </button>
-            <button className="p-2 hover:bg-gray-800 rounded-full">
-              <ViewListIcon className="h-6 w-6" />
+              {isPlaying ? <Pause size={20} /> : <Play size={20} />}
             </button>
           </div>
-        </div>
+        )}
 
-        {/* Progress Bar */}
-        <div className="flex items-center space-x-2 mb-4">
-          <span className="text-sm text-gray-400">{formatTime(seek)}</span>
-          <div className="flex-1">
-            <input
-              type="range"
-              min="0"
-              max={duration || 0}
-              value={seek}
-              onChange={handleSeek}
-              className="w-full h-1 bg-gray-700 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
-            />
-          </div>
-          <span className="text-sm text-gray-400">{formatTime(duration)}</span>
-        </div>
+        {/* Full Player */}
+        {isExpanded && (
+          <div className="h-full p-8 flex flex-col">
+            <div className="flex-1 flex flex-col items-center justify-center">
+              <motion.img 
+                src={currentTrack?.artwork}
+                alt="Album Art"
+                className="w-64 h-64 rounded-lg shadow-2xl mb-8"
+                animate={{ scale: isPlaying ? 1 : 0.95 }}
+                transition={{ duration: 0.2 }}
+              />
+              <h2 className="text-2xl font-bold mb-2">{currentTrack?.title}</h2>
+              <p className="text-gray-400 mb-8">{currentTrack?.artist}</p>
+              
+              {/* Progress bar */}
+              <div className="w-full mb-8">
+                <Slider 
+                  value={[seek]}
+                  max={duration}
+                  onValueChange={(value) => handleSeek(value[0])}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-sm text-gray-400 mt-2">
+                  <span>{formatTime(seek)}</span>
+                  <span>{formatTime(duration)}</span>
+                </div>
+              </div>
 
-        {/* Playback Controls */}
-        <div className="flex items-center justify-center space-x-8">
-          <button className="p-2 hover:bg-gray-800 rounded-full" onClick={onPreviousTrack}>
-            <RewindIcon className="h-8 w-8" />
-          </button>
-          <button 
-            className="p-4 hover:bg-gray-800 rounded-full" 
-            onClick={togglePlayPause}
-          >
-            {isPlaying ? (
-              <PauseIcon className="h-10 w-10" />
-            ) : (
-              <PlayIcon className="h-10 w-10" />
-            )}
-          </button>
-          <button className="p-2 hover:bg-gray-800 rounded-full" onClick={onNextTrack}>
-            <FastForwardIcon className="h-8 w-8" />
-          </button>
-        </div>
-
-        {/* Advanced Controls */}
-        {showAdvancedControls && (
-          <div className="mt-4 p-4 bg-gray-900 rounded-lg">
-            <div className="space-y-4">
-              {/* Audio Processing Toggle */}
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-400">Enhanced Processing</span>
+              {/* Playback controls */}
+              <div className="flex items-center space-x-8">
+                <button onClick={onPreviousTrack}>
+                  <SkipBack size={32} />
+                </button>
                 <button
-                  onClick={() => setIsProcessingEnabled(!isProcessingEnabled)}
-                  className={`px-4 py-2 rounded-lg ${
-                    isProcessingEnabled ? 'bg-blue-600' : 'bg-gray-700'
-                  }`}
+                  onClick={() => onPlayPause(!isPlaying)}
+                  className="p-4 rounded-full bg-blue-600"
                 >
-                  {isProcessingEnabled ? 'Enabled' : 'Disabled'}
+                  {isPlaying ? <Pause size={32} /> : <Play size={32} />}
+                </button>
+                <button onClick={onNextTrack}>
+                  <SkipForward size={32} />
                 </button>
               </div>
-
-              {/* Speed Control */}
-              <div>
-                <label className="text-sm text-gray-400">Playback Speed ({speed.toFixed(2)}x)</label>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.1"
-                  value={speed}
-                  onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
-                  className="w-full h-1 bg-gray-700 rounded-full appearance-none cursor-pointer mt-2"
-                />
-              </div>
-              
-              {/* Pitch Control */}
-              <div>
-                <label className="text-sm text-gray-400">
-                  Pitch ({pitch > 0 ? '+' : ''}{pitch} semitones)
-                  {isProcessingEnabled && ' - Enhanced'}
-                </label>
-                <input
-                  type="range"
-                  min="-12"
-                  max="12"
-                  step="1"
-                  value={pitch}
-                  onChange={(e) => handlePitchChange(parseFloat(e.target.value))}
-                  className="w-full h-1 bg-gray-700 rounded-full appearance-none cursor-pointer mt-2"
-                />
-              </div>
-
-              {/* Volume Control */}
-              <div>
-                <label className="text-sm text-gray-400">Volume</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={volume}
-                  onChange={handleVolumeChange}
-                  className="w-full h-1 bg-gray-700 rounded-full appearance-none cursor-pointer mt-2"
-                />
-              </div>
-
-              {/* Equalizer Toggle */}
-              <button
-                className="w-full py-2 mt-2 bg-gray-800 rounded-lg text-white hover:bg-gray-700"
-                onClick={() => setShowEqualizer(!showEqualizer)}
-              >
-                {showEqualizer ? 'Hide Equalizer' : 'Show Equalizer'}
-              </button>
-
-              {/* Equalizer Component */}
-              {showEqualizer && (
-                <Equalizer
-                  audioContext={audioContext}
-                  sourceNode={sourceNode}
-                />
-              )}
-
-              {/* Audio Processor Integration */}
-              {isProcessingEnabled && (
-                <AudioProcessor 
-                  audioContext={audioContext}
-                  sourceNode={sourceNode}
-                  analyzer={analyzer}
-                  isPlaying={isPlaying}
-                />
-              )}
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 

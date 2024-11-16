@@ -423,4 +423,62 @@ export const useAudioContext = () => {
   const allocateBuffer = (size) => {
     const buffer = bufferPoolRef.current.available.find(b => b.length >= size);
     if (buffer) {
+      const id = crypto.randomUUID();
+      bufferPoolRef.current.inUse.set(id, buffer);
       bufferPoolRef.current.available = bufferPoolRef.current.available.filter(b => b !== buffer);
+      return { buffer, id };
+    }
+    
+    // Create new buffer if none available
+    const newBuffer = new Float32Array(size);
+    const id = crypto.randomUUID();
+    bufferPoolRef.current.inUse.set(id, newBuffer);
+    bufferPoolRef.current.totalSize += size;
+    return { buffer: newBuffer, id };
+  };
+
+  // Add buffer release function
+  const releaseBuffer = (id) => {
+    const buffer = bufferPoolRef.current.inUse.get(id);
+    if (buffer) {
+      bufferPoolRef.current.inUse.delete(id);
+      bufferPoolRef.current.available.push(buffer);
+    }
+  };
+
+  // Add buffer cleanup function
+  const cleanupBuffers = () => {
+    bufferPoolRef.current.available = [];
+    bufferPoolRef.current.inUse.clear();
+    bufferPoolRef.current.totalSize = 0;
+  };
+
+  // Add to cleanup function
+  const cleanup = () => {
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+    }
+    cleanupBuffers();
+    // Clear all refs and state
+    workletNodeRef.current = null;
+    sourceNodeRef.current = null;
+    destinationRef.current = null;
+    analyzerRefs.current = {
+      waveform: null,
+      spectrum: null,
+      loudness: null,
+      pitch: null
+    };
+  };
+
+  // Return additional functions in the hook
+  return {
+    ...contextState,
+    metrics,
+    processingState,
+    allocateBuffer,
+    releaseBuffer,
+    cleanupBuffers,
+    // ... rest of the return object
+  };
+};
