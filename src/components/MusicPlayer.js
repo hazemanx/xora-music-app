@@ -49,6 +49,8 @@ import AudioVisualizer from './AudioVisualizer';
 
 import { useAudioContext } from '../hooks/useAudioContext';
 
+const supportedFormats = ['mp3', 'wav', 'aac', 'ogg', 'flac'];
+
 function MusicPlayer({ 
   tracks, 
   currentTrackIndex, 
@@ -101,6 +103,10 @@ function MusicPlayer({
   const volumeBarRef = useRef(null);
   const gestureAreaRef = useRef(null);
 
+  const isFormatSupported = useCallback((url) => {
+    return supportedFormats.some(format => url.toLowerCase().endsWith(format));
+  }, []);
+
   // Initialize audio processor
   useEffect(() => {
     if (!audioContext) return;
@@ -134,35 +140,51 @@ function MusicPlayer({
 
     const initTrack = async () => {
       try {
-        if (sound) {
-          if (crossfadeTime > 0) {
-            await handleCrossfade();
-          } else {
-            sound.unload();
-          }
+        const currentTrack = tracks[currentTrackIndex];
+        
+        if (!currentTrack.url) {
+          throw new Error('Invalid track URL');
         }
 
-        const currentTrack = tracks[currentTrackIndex];
+        if (!isFormatSupported(currentTrack.url)) {
+          throw new Error('Unsupported audio format');
+        }
+
+        if (sound) {
+          sound.unload();
+        }
+
         const newSound = new Howl({
           src: [currentTrack.url],
           html5: true,
           volume: volume,
           rate: playbackRate,
-          format: ['mp3', 'wav', 'flac'],
+          format: supportedFormats,
+          xhr: {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'audio/*'
+            }
+          },
           onload: () => {
             setDuration(newSound.duration());
             if (isInitialized && newSound._sounds[0]?._node) {
               connectSource(newSound._sounds[0]._node);
               
-              // Apply replay gain if available
               if (currentTrack.replayGain) {
                 setReplayGain(currentTrack.replayGain);
                 applyReplayGain(newSound, currentTrack.replayGain);
               }
             }
           },
-          onplay: () => onPlayPause(true),
-          onpause: () => onPlayPause(false),
+          onloaderror: (id, error) => {
+            console.error('Audio loading error:', error);
+            onError('Failed to load audio file');
+          },
+          onplayerror: (id, error) => {
+            console.error('Audio playback error:', error);
+            onError('Playback error occurred');
+          },
           onend: onTrackEnd,
           onseek: () => setSeek(newSound.seek()),
           onstop: () => {
@@ -181,12 +203,12 @@ function MusicPlayer({
 
       } catch (error) {
         console.error('Track initialization failed:', error);
-        onError('Failed to load track');
+        onError(error.message);
       }
     };
 
     initTrack();
-  }, [tracks, currentTrackIndex, crossfadeTime, volume, playbackRate, isInitialized]);
+  }, [tracks, currentTrackIndex, volume, playbackRate, isInitialized, isFormatSupported]);
 
   // Enhanced playback control handlers
   const handleTrackEnd = () => {

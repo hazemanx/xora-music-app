@@ -1,8 +1,9 @@
 const CACHE_NAME = 'xora-music-cache-v2';
-const AUDIO_CACHE_NAME = 'xora-audio-cache-v2';
+const AUDIO_CACHE_NAME = 'audio-cache-v1';
 const PLAYLIST_CACHE_NAME = 'xora-playlist-cache-v1';
 const DB_NAME = 'xora-offline-db';
 const STORE_NAME = 'audio-metadata';
+const METADATA_STORE = 'audio-metadata';
 
 // Expanded assets to cache
 const STATIC_ASSETS = [
@@ -83,39 +84,31 @@ async function handleAudioFetch(request) {
     if (cachedResponse) {
       // Update metadata if needed
       if (metadata) {
-        cachedResponse.headers.set('X-Audio-Metadata', JSON.stringify(metadata));
+        const newHeaders = new Headers(cachedResponse.headers);
+        newHeaders.set('X-Audio-Metadata', JSON.stringify(metadata));
+        return new Response(cachedResponse.body, {
+          status: cachedResponse.status,
+          statusText: cachedResponse.statusText,
+          headers: newHeaders
+        });
       }
       return cachedResponse;
     }
 
     // Fetch from network
     const response = await fetch(request);
-    const cache = await caches.open(AUDIO_CACHE_NAME);
-    
-    // Clone response for processing
-    const responseToCache = response.clone();
-    
-    // Process audio data if needed
-    if (response.ok) {
-      const audioData = await response.arrayBuffer();
-      // Store in IndexedDB
-      await storeAudioMetadata(request.url, {
-        size: audioData.byteLength,
-        timestamp: Date.now(),
-        type: response.headers.get('content-type')
-      });
-      
-      // Cache processed response
-      await cache.put(request, new Response(audioData, {
-        status: 200,
-        headers: response.headers
-      }));
+    if (!response.ok) {
+      throw new Error(`Network response was not ok: ${response.status}`);
     }
 
-    return responseToCache;
+    // Cache the response
+    const cache = await caches.open(AUDIO_CACHE_NAME);
+    await cache.put(request, response.clone());
+
+    return response;
   } catch (error) {
-    console.error('Audio fetch failed:', error);
-    return caches.match('/offline.html');
+    console.error('Audio fetch error:', error);
+    throw error;
   }
 }
 
@@ -231,15 +224,19 @@ async function storeAudioMetadata(url, metadata) {
 
 // Audio metadata retrieval
 async function getAudioMetadata(url) {
-  const db = await initializeDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORE_NAME], 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.get(url);
-    
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+  try {
+    const db = await initializeDB();
+    const transaction = db.transaction([METADATA_STORE], 'readonly');
+    const store = transaction.objectStore(METADATA_STORE);
+    return await new Promise((resolve, reject) => {
+      const request = store.get(url);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Error retrieving audio metadata:', error);
+    return null;
+  }
 }
 
 // Background sync registration

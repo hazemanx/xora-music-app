@@ -3,16 +3,27 @@ import axios from 'axios';
 const YOUTUBE_API_KEY = process.env.REACT_APP_YOUTUBE_API_KEY;
 const SOUNDCLOUD_CLIENT_ID = process.env.REACT_APP_SOUNDCLOUD_CLIENT_ID;
 
-// YouTube Search
+// Validate API keys
+const validateAPIKeys = () => {
+  if (!YOUTUBE_API_KEY) {
+    throw new Error('Missing YouTube API key. Please set REACT_APP_YOUTUBE_API_KEY in your environment variables.');
+  }
+  if (!SOUNDCLOUD_CLIENT_ID) {
+    throw new Error('Missing SoundCloud Client ID. Please set REACT_APP_SOUNDCLOUD_CLIENT_ID in your environment variables.');
+  }
+};
+
+// YouTube Search with validation
 export async function searchYoutube(query) {
   try {
+    validateAPIKeys();
     const response = await axios.get(`https://www.googleapis.com/youtube/v3/search`, {
       params: {
         part: 'snippet',
         maxResults: 10,
         q: query,
         type: 'video',
-        videoCategoryId: '10', // Music category
+        videoCategoryId: '10',
         key: YOUTUBE_API_KEY
       }
     });
@@ -27,7 +38,7 @@ export async function searchYoutube(query) {
     }));
   } catch (error) {
     console.error('YouTube search error:', error);
-    throw new Error('Failed to search YouTube');
+    throw new Error(error.response?.data?.error?.message || 'Failed to search YouTube');
   }
 }
 

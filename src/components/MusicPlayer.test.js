@@ -1,9 +1,7 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import MusicPlayer from './MusicPlayer';
 
-// Mock Howler
 jest.mock('howler', () => ({
   Howl: jest.fn(() => ({
     play: jest.fn(),
@@ -11,6 +9,7 @@ jest.mock('howler', () => ({
     seek: jest.fn(),
     volume: jest.fn(),
     unload: jest.fn(),
+    duration: jest.fn(() => 300), // 5 minutes
     _sounds: [{ _node: {} }]
   })),
   Howler: {
@@ -18,7 +17,6 @@ jest.mock('howler', () => ({
   }
 }));
 
-// Mock sample track
 const mockTrack = {
   id: '1',
   url: 'test.mp3',
@@ -54,6 +52,20 @@ describe('MusicPlayer', () => {
     const playButton = screen.getByRole('button', { name: /play/i });
     fireEvent.click(playButton);
     expect(defaultProps.onPlayPause).toHaveBeenCalledWith(true);
+  });
+
+  test('handles volume change', () => {
+    render(<MusicPlayer {...defaultProps} />);
+    const volumeSlider = screen.getByRole('slider', { name: /volume/i });
+    fireEvent.change(volumeSlider, { target: { value: '0.5' } });
+    expect(volumeSlider.value).toBe('0.5');
+  });
+
+  test('handles track seeking', () => {
+    render(<MusicPlayer {...defaultProps} />);
+    const seekBar = screen.getByRole('slider', { name: /seek/i });
+    fireEvent.change(seekBar, { target: { value: '150' } });
+    expect(seekBar.value).toBe('150');
   });
 
   test('displays track information', () => {
