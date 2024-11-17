@@ -1,0 +1,73 @@
+/* Brutalist Player UI */
+.player-container {
+  background-color: theme('colors.cyber.black');
+  color: theme('colors.cyber.silver');
+  font-family: theme('fontFamily.cyber');
+  height: 100dvh;
+}
+
+/* Circular Progress */
+.progress-ring {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+.progress-ring__circle {
+  transition: stroke-dashoffset 0.2s;
+  stroke: theme('colors.cyber.accent.DEFAULT');
+  stroke-width: 4;
+  fill: transparent;
+}
+
+/* Brutalist Controls */
+.control-button {
+  width: 4rem;
+  height: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid theme('colors.cyber.accent');
+  transition: all 0.2s;
+}
+
+.control-button:hover {
+  background-color: theme('colors.cyber.accent.DEFAULT / 0.1');
+}
+
+/* Slider styling */
+.cyber-slider {
+  height: 0.25rem;
+  background-color: theme('colors.cyber.gray');
+  border-radius: 0;
+}
+
+.cyber-slider::-webkit-slider-thumb {
+  width: 1rem;
+  height: 1rem;
+  background-color: theme('colors.cyber.accent');
+  border: none;
+  -webkit-appearance: none;
+  transform: rotate(45deg);
+}
+
+/* Color picker */
+.color-picker {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  padding: 0.5rem;
+  background-color: theme('colors.cyber.gray / 0.8');
+  backdrop-filter: blur(4px);
+  border: 1px solid theme('colors.cyber.accent');
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+} 

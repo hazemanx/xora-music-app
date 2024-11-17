@@ -46,12 +46,14 @@ import { AudioProcessorEngine } from './Audio/AudioProcessor';
 import Equalizer from './Equalizer';
 import TrackMetadataEditor from './TrackMetadataEditor';
 import AudioVisualizer from './AudioVisualizer';
-
-import { useAudioContext } from '../hooks/useAudioContext';
+import { useAudioContext } from '../Hooks/useAudioContext';
+import { ProgressRing } from './ProgressRing';
+import { QueueDisplay } from './QueueDisplay';
+import { MiniPlayer } from './MiniPlayer';
 
 const supportedFormats = ['mp3', 'wav', 'aac', 'ogg', 'flac'];
 
-function MusicPlayer({ 
+function MusicPlayer({
   tracks, 
   currentTrackIndex, 
   isPlaying, 
@@ -88,12 +90,14 @@ function MusicPlayer({
   const [pitch, setPitch] = useState(0);
   const [isMetadataEditorOpen, setIsMetadataEditorOpen] = useState(false);
   const [isVisualizerVisible, setIsVisualizerVisible] = useState(false);
-  const [visualizerType, setVisualizerType] = useState('waveform');
+  const [visualizerType, setVisualizerType] = useState('bars');
   const [isFavorite, setIsFavorite] = useState(false);
   const [crossfadeTime, setCrossfadeTime] = useState(2);
   const [nextSound, setNextSound] = useState(null);
   const [replayGain, setReplayGain] = useState(0);
   const [playbackHistory, setPlaybackHistory] = useState([]);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
   
   // Refs
   const audioProcessorRef = useRef(null);
@@ -264,9 +268,14 @@ function MusicPlayer({
   // Metadata handling
   const handleMetadataSave = async (updatedMetadata) => {
     try {
-      // Update track metadata
+      setIsLoading(true);
       const updatedTrack = { ...tracks[currentTrackIndex], ...updatedMetadata };
       await onTrackUpdate(currentTrackIndex, updatedTrack);
+      
+      // Update local state immediately for smooth UI
+      setTracks(prev => prev.map((track, idx) => 
+        idx === currentTrackIndex ? updatedTrack : track
+      ));
       
       toast({
         title: "Changes saved",
@@ -281,6 +290,8 @@ function MusicPlayer({
         description: "Failed to save changes. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -289,8 +300,10 @@ function MusicPlayer({
     if (sound) {
       if (isPlaying) {
         sound.pause();
+        cancelAnimationFrame(visualizerFrameRef.current);
       } else {
         sound.play();
+        updateVisualization();
       }
       onPlayPause(!isPlaying);
     }
@@ -300,6 +313,8 @@ function MusicPlayer({
     setVolume(newVolume);
     if (sound) {
       sound.volume(newVolume);
+      // Update visualization intensity with volume
+      updateVisualization(newVolume);
     }
   };
 
@@ -307,6 +322,8 @@ function MusicPlayer({
     if (sound) {
       sound.seek(newPosition);
       setSeek(newPosition);
+      // Ensure visualization stays in sync after seeking
+      cancelAnimationFrame(visualizerFrameRef.current);
       updateVisualization();
     }
   };
@@ -315,6 +332,8 @@ function MusicPlayer({
     setPlaybackRate(newSpeed);
     if (sound) {
       sound.rate(newSpeed);
+      // Adjust visualization to playback speed
+      updateVisualization();
     }
   };
 
@@ -401,227 +420,82 @@ function MusicPlayer({
   const currentTrack = tracks[currentTrackIndex];
 
   return (
-    <div className="w-full h-screen bg-zinc-900 text-white flex flex-col">
-      {/* Enhanced Album Art and Track Info */}
-      <div className="flex-1 flex flex-col items-center justify-center p-8">
-        <div className="w-full max-w-md aspect-square mb-8 relative group">
-          <img 
-            src={currentTrack.artwork || "/api/placeholder/400/400"}
-            alt={`${currentTrack.title} artwork`}
-            className="w-full h-full object-cover rounded-lg shadow-xl transition-transform group-hover:scale-105"
-          />
-          <button
-            onClick={() => setIsMetadataEditorOpen(true)}
-            className="absolute bottom-4 right-4 p-2 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            <Edit2 size={20} />
-          </button>
-        </div>
-        
-        <div className="w-full max-w-md text-center">
-          <h2 className="text-2xl font-semibold mb-2 truncate">{currentTrack.title}</h2>
-          <p className="text-gray-400 text-lg truncate">{currentTrack.artist}</p>
-          {currentTrack.album && (
-            <p className="text-gray-500 text-sm mt-1 truncate">{currentTrack.album}</p>
-          )}
-        </div>
-
-        {/* Visualizer */}
-        {isVisualizerVisible && (
-          <div className="w-full max-w-md mt-8">
-            <AudioVisualizer
-              ref={visualizerRef}
-              type={visualizerType}
-              audioContext={audioContext}
-              sourceNode={sourceNode}
-              className="w-full h-32 bg-zinc-800/50 rounded-lg"
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Enhanced Playback Controls */}
-      <div className="w-full p-8 bg-zinc-900/95 backdrop-blur">
-        {/* Progress bar */}
-        <div className="mb-4 flex items-center gap-4">
-          <span className="text-sm text-gray-400 min-w-[40px]">
-            {formatTime(seek)}
-          </span>
-          <div className="flex-1 relative group">
-            <Slider
-              ref={seekBarRef}
-              min={0}
-              max={duration}
-              value={[seek]}
-              onValueChange={([value]) => handleSeek(value)}
-              className="relative z-10"
-            />
-            <div className="absolute inset-0 -z-10 scale-y-[4] opacity-0 group-hover:opacity-100 transition-opacity">
-              <canvas 
-                ref={el => visualizerRef.current?.setWaveformCanvas(el)}
-                className="w-full h-full"
-              />
-            </div>
-          </div>
-          <span className="text-sm text-gray-400 min-w-[40px]">
-            {formatTime(duration)}
-          </span>
-        </div>
-
-        {/* Main controls */}
-        <div className="flex justify-between items-center mb-8">
-          <button 
-            className={`p-2 text-gray-400 hover:text-white ${shuffle ? 'text-blue-500' : ''}`}
-            onClick={toggleShuffle}
-          >
-            <Shuffle size={24} />
-          </button>
-          <button className="p-2 text-gray-400 hover:text-white" onClick={onPreviousTrack}>
-            <SkipBack size={28} />
-          </button>
-          <button 
-            onClick={togglePlayPause}
-            className="p-4 bg-blue-600 rounded-full text-white hover:bg-blue-700 transition-colors"
-          >
-            {isPlaying ? <Pause size={40} /> : <Play size={40} />}
-          </button>
-          <button className="p-2 text-gray-400 hover:text-white" onClick={onNextTrack}>
-            <SkipForward size={28} />
-          </button>
-          <button 
-            className={`p-2 text-gray-400 hover:text-white ${repeat !== 'off' ? 'text-blue-500' : ''}`}
-            onClick={toggleRepeat}
-          >
-            {repeat === 'one' ? <RepeatOnce size={24} /> : <Repeat size={24} />}
-          </button>
-        </div>
-
-        {/* Bottom controls */}
-        <div className="flex justify-between items-center">
-          <button 
-            className="p-2 text-gray-400 hover:text-white"
-            onClick={() => setIsPitchSpeedVisible(true)}
-          >
-            <Settings size={24} />
-          </button>
-          <div className="flex items-center gap-2">
-            {getVolumeIcon()}
-            <Slider
-              ref={volumeBarRef}
-              min={0}
-              max={1}
-              step={0.01}
-              value={[volume]}
-              onValueChange={([value]) => handleVolumeChange(value)}
-              className="w-24"
-            />
-          </div>
-          <button 
-            className={`p-2 text-gray-400 hover:text-white ${isEqualizerVisible ? 'text-blue-500' : ''}`}
-            onClick={() => setIsEqualizerVisible(!isEqualizerVisible)}
-          >
-            <List size={24} />
-          </button>
-        </div>
-      </div>
-
-      {/* Modals */}
-      {isMetadataEditorOpen && (
-        <TrackMetadataEditor
-          track={currentTrack}
-          onSave={handleMetadataSave}
-          onClose={() => setIsMetadataEditorOpen(false)}
+    <>
+      {/* Mini Player (when collapsed) */}
+      {!isExpanded && (
+        <MiniPlayer
+          currentTrack={tracks[currentTrackIndex]}
+          isPlaying={isPlaying}
+          onPlayPause={togglePlayPause}
+          onExpand={() => setIsExpanded(true)}
         />
       )}
 
-      {isPitchSpeedVisible && (
-        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 rounded-lg shadow-xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-semibold mb-4">Playback Settings</h3>
-            
-            {/* Speed control */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">
-                Playback Speed: {playbackRate.toFixed(2)}x
-              </label>
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => handleSpeedChange(Math.max(0.5, playbackRate - 0.1))}
-                >
-                  <Minus size={16} />
-                </Button>
-                <Slider
-                  min={0.5}
-                  max={2}
-                  step={0.1}
-                  value={[playbackRate]}
-                  onValueChange={([value]) => handleSpeedChange(value)}
-                  className="flex-1"
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => handleSpeedChange(Math.min(2, playbackRate + 0.1))}
-                >
-                  <Plus size={16} />
-                </Button>
+      {/* Full Player */}
+      {isExpanded && (
+        <div className="fixed inset-0 bg-cyber-black text-cyber-silver p-8">
+          <div className="h-full flex flex-col">
+            {/* Visualizer */}
+            <AudioVisualizer
+              audioContext={audioContext}
+              sourceNode={sourceNode}
+              type={visualizerType}
+              onTypeChange={setVisualizerType}
+            />
+
+            {/* Track Info & Controls */}
+            <div className="flex-1 flex items-center justify-between">
+              <div className="flex-1">
+                <h2 className="text-2xl font-bold">{currentTrack?.title}</h2>
+                <p className="text-cyber-accent">{currentTrack?.artist}</p>
               </div>
+              
+              {/* Progress Ring */}
+              <ProgressRing
+                progress={(seek / duration) * 100}
+                size={120}
+              />
             </div>
 
-            {/* Pitch control */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">
-                Pitch Adjustment: {pitch > 0 ? '+' : ''}{pitch} semitones
-              </label>
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => handlePitchChange(Math.max(-12, pitch - 1))}
-                >
-                  <Minus size={16} />
-                </Button>
-                <Slider
-                  min={-12}
-                  max={12}
-                  step={1}
-                  value={[pitch]}
-                  onValueChange={([value]) => handlePitchChange(value)}
-                  className="flex-1"
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => handlePitchChange(Math.min(12, pitch + 1))}
-                >
-                  <Plus size={16} />
-                </Button>
-              </div>
-            </div>
+            {/* Progress Bar */}
+            <ProgressBar
+              currentTime={seek}
+              duration={duration}
+              onSeek={handleSeek}
+            />
 
-            {/* Close button */}
-            <Button 
-              className="w-full"
-              onClick={() => setIsPitchSpeedVisible(false)}
-            >
-              Close
-            </Button>
+            {/* Playback Controls */}
+            <div className="flex items-center justify-between mt-8">
+              <button onClick={() => setShowQueue(!showQueue)}>
+                Queue
+              </button>
+              <div className="flex items-center gap-4">
+                <button onClick={onPreviousTrack}>Previous</button>
+                <button onClick={togglePlayPause}>
+                  {isPlaying ? 'Pause' : 'Play'}
+                </button>
+                <button onClick={onNextTrack}>Next</button>
+              </div>
+              <button onClick={() => setIsExpanded(false)}>
+                Minimize
+              </button>
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* Equalizer */}
-      {isEqualizerVisible && (
-        <div className="absolute bottom-full left-0 right-0 bg-zinc-800 p-4">
-          <Equalizer 
-            audioContext={audioContext} 
-            sourceNode={sourceNode} 
-          />
+          {/* Queue Sidebar */}
+          {showQueue && (
+            <QueueDisplay
+              queue={tracks}
+              currentIndex={currentTrackIndex}
+              onTrackSelect={(index) => {
+                setCurrentTrackIndex(index);
+                handleTrackTransition(tracks[index]);
+              }}
+            />
+          )}
         </div>
       )}
-    </div>
+    </>
   );
 }
 

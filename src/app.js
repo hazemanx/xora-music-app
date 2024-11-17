@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { auth, getPlaylists, savePlaylist, updateTrackMetadata } from './firebase';
-import { useAudioContext } from './hooks/useAudioContext';
-import useOfflineDetection from './hooks/useOfflineDetection';
-import usePlaybackState from './hooks/usePlaybackState';
+import { useAudioContext } from './Hooks/useAudioContext';
+import useOfflineDetection from './Hooks/useOfflineDetection';
+import usePlaybackState from './Hooks/usePlaybackState';
 import { DragDropContext } from 'react-beautiful-dnd';
 import { Car, Settings } from 'lucide-react';
+import { useHotkeys } from 'react-hotkeys-hook';
+import { useLocalStorage } from './Hooks/useLocalStorage';
 
 // Components
 import Navbar from './components/Navbar';
@@ -22,6 +24,7 @@ import AudioProcessor from './components/Audio/AudioProcessor';
 import ErrorBoundary from './components/ErrorBoundary';
 import VehicleMode from './components/VehicleMode';
 import SettingsPanel from './components/SettingsPanel';
+import Sidebar from './components/sidebar';
 
 // Constants and Utils
 import { REPEAT_MODES, INITIAL_TRACKS } from './constants';
@@ -36,12 +39,26 @@ function App() {
   const [editingTrack, setEditingTrack] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // User preferences
+  const [preferences, setPreferences] = useLocalStorage('preferences', {
+    autoplay: false,
+    crossfade: true,
+    gapless: true,
+    replayGain: 'album',
+    visualizer: true,
+    theme: 'dark',
+    audioQuality: 'high'
+  });
 
   // Audio processing state
   const { 
     audioContext, 
     sourceNode,
-    isInitialized: isAudioInitialized 
+    isInitialized: isAudioInitialized,
+    metrics,
+    processingState 
   } = useAudioContext();
 
   // Playback state management
@@ -60,16 +77,28 @@ function App() {
     handlePreviousTrack
   } = usePlaybackState(tracks);
 
+  // UI State
+  const [isVehicleMode, setIsVehicleMode] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [visualizerEnabled, setVisualizerEnabled] = useState(preferences.visualizer);
+
   // Offline detection
   const isOnline = useOfflineDetection();
+
+  // Keyboard shortcuts
+  useHotkeys('space', () => setIsPlaying(prev => !prev), [setIsPlaying]);
+  useHotkeys('right', handleNextTrack, [handleNextTrack]);
+  useHotkeys('left', handlePreviousTrack, [handlePreviousTrack]);
+  useHotkeys('m', () => setVolume(prev => prev === 0 ? 1 : 0), [setVolume]);
 
   // Memoized filtered data
   const filteredData = useMemo(() => {
     const query = searchQuery.toLowerCase();
     return {
       tracks: tracks.filter(track => 
-        track.title.toLowerCase().includes(query) ||
-        track.artist.toLowerCase().includes(query)
+        track.title?.toLowerCase().includes(query) ||
+        track.artist?.toLowerCase().includes(query)
       ),
       playlists: playlists.filter(playlist =>
         playlist.name.toLowerCase().includes(query)
@@ -115,6 +144,7 @@ function App() {
     }
   }, [playlists]);
 
+  // Queue and playlist management handlers
   const handleSelectPlaylist = useCallback((index) => {
     setCurrentPlaylist(index);
     setQueue(playlists[index].tracks);
@@ -123,7 +153,6 @@ function App() {
     setRepeat(REPEAT_MODES.OFF);
   }, [playlists, setQueue, setCurrentTrackIndex, setShuffle, setRepeat]);
 
-  // Queue management
   const handleReorderQueue = useCallback((startIndex, endIndex) => {
     const newQueue = Array.from(queue);
     const [reorderedItem] = newQueue.splice(startIndex, 1);
@@ -131,7 +160,6 @@ function App() {
     setQueue(newQueue);
   }, [queue, setQueue]);
 
-  // Playlist reordering with optimistic updates
   const handleReorderPlaylist = useCallback(async (startIndex, endIndex) => {
     if (currentPlaylist === null) return;
 
@@ -140,17 +168,14 @@ function App() {
     const [reorderedItem] = playlist.tracks.splice(startIndex, 1);
     playlist.tracks.splice(endIndex, 0, reorderedItem);
     
-    // Optimistic update
     setPlaylists(updatedPlaylists);
     setQueue(playlist.tracks);
     
-    // Persist changes
     if (auth.currentUser) {
       try {
         await savePlaylist(auth.currentUser.uid, playlist);
       } catch (err) {
         setError('Failed to save playlist order');
-        // Revert on error
         setPlaylists(playlists);
         setQueue(playlists[currentPlaylist].tracks);
       }
@@ -178,7 +203,6 @@ function App() {
   const handleTrackEnd = useCallback(() => {
     switch(repeat) {
       case REPEAT_MODES.ONE:
-        // Current track will repeat automatically
         break;
       case REPEAT_MODES.ALL:
         handleNextTrack();
@@ -192,130 +216,145 @@ function App() {
     }
   }, [repeat, currentTrackIndex, queue.length, handleNextTrack, setIsPlaying]);
 
-  // Add new state
-  const [isVehicleMode, setIsVehicleMode] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [volume, setVolume] = useState(1);
-
-  const handleVolumeChange = useCallback((newVolume) => {
-    setVolume(newVolume);
-  }, []);
+  // Preference handlers
+  const handlePreferenceChange = useCallback((key, value) => {
+    setPreferences(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  }, [setPreferences]);
 
   return (
     <ErrorBoundary>
-      <div className="App min-h-screen bg-gradient-to-b from-gray-900 to-black text-white">
-        <Navbar />
-        <OfflineIndicator isOnline={isOnline} />
-        
-        <div className="container mx-auto p-4 mb-20">
-          <h1 className="text-4xl font-bold mb-6 bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
-            Welcome to XORA Music
-          </h1>
+      <div className={`App min-h-screen bg-gradient-to-b from-gray-900 to-black text-white ${preferences.theme}`}>
+        <div className="flex h-screen overflow-hidden">
+          <Sidebar 
+            isOpen={sidebarOpen}
+            onToggle={() => setSidebarOpen(prev => !prev)}
+            playlists={filteredData.playlists}
+            currentPlaylist={currentPlaylist}
+            onSelectPlaylist={handleSelectPlaylist}
+          />
+          
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <Navbar 
+              onToggleSidebar={() => setSidebarOpen(prev => !prev)}
+              theme={preferences.theme}
+              onThemeChange={(theme) => handlePreferenceChange('theme', theme)}
+            />
+            <OfflineIndicator isOnline={isOnline} />
 
-          {!auth.currentUser ? (
-            <Auth />
-          ) : (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <p className="text-gray-300">
-                  Welcome, {auth.currentUser.email}!
-                </p>
-                {isLoading && (
-                  <div className="animate-pulse text-blue-500">
-                    Loading...
+            <main className="flex-1 p-8 overflow-auto">
+              {!auth.currentUser ? (
+                <Auth />
+              ) : (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <p className="text-gray-300">
+                      Welcome, {auth.currentUser.email}!
+                    </p>
+                    {isLoading && (
+                      <div className="animate-pulse text-blue-500">
+                        Loading...
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {error && (
-                <div className="bg-red-500/10 border border-red-500 text-red-500 p-3 rounded">
-                  {error}
-                </div>
-              )}
+                  {error && (
+                    <div className="bg-red-500/10 border border-red-500 text-red-500 p-3 rounded">
+                      {error}
+                    </div>
+                  )}
 
-              <SearchBar 
-                searchQuery={searchQuery} 
-                setSearchQuery={setSearchQuery} 
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <TrackList 
-                  tracks={filteredData.tracks}
-                  currentTrackIndex={currentTrackIndex}
-                  onTrackSelect={index => {
-                    setCurrentTrackIndex(index);
-                    setQueue(prev => [...prev, filteredData.tracks[index]]);
-                  }}
-                  onAddToQueue={track => setQueue(prev => [...prev, track])}
-                  onEditMetadata={setEditingTrack}
-                  isProcessingEnabled={isAudioInitialized}
-                />
-
-                <div className="space-y-4">
-                  <Playlists 
-                    playlists={filteredData.playlists}
-                    onCreatePlaylist={handleCreatePlaylist}
-                    onSelectPlaylist={handleSelectPlaylist}
-                    currentPlaylist={currentPlaylist}
+                  <SearchBar 
+                    searchQuery={searchQuery} 
+                    setSearchQuery={setSearchQuery} 
                   />
-                  
-                  {currentPlaylist !== null && (
-                    <DragDropContext onDragEnd={({source, destination}) => {
-                      if (destination) {
-                        handleReorderPlaylist(source.index, destination.index);
-                      }
-                    }}>
-                      <PlaylistViewer
-                        tracks={playlists[currentPlaylist].tracks}
-                        currentTrackIndex={currentTrackIndex}
-                        onTrackSelect={index => {
-                          setCurrentTrackIndex(index);
-                          setQueue(playlists[currentPlaylist].tracks);
-                        }}
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <TrackList 
+                      tracks={filteredData.tracks}
+                      currentTrackIndex={currentTrackIndex}
+                      onTrackSelect={index => {
+                        setCurrentTrackIndex(index);
+                        setQueue(prev => [...prev, filteredData.tracks[index]]);
+                      }}
+                      onAddToQueue={track => setQueue(prev => [...prev, track])}
+                      onEditMetadata={setEditingTrack}
+                      isProcessingEnabled={isAudioInitialized}
+                    />
+
+                    <div className="space-y-4">
+                      <Playlists 
+                        playlists={filteredData.playlists}
+                        onCreatePlaylist={handleCreatePlaylist}
+                        onSelectPlaylist={handleSelectPlaylist}
+                        currentPlaylist={currentPlaylist}
                       />
-                    </DragDropContext>
+                      
+                      {currentPlaylist !== null && (
+                        <DragDropContext onDragEnd={({source, destination}) => {
+                          if (destination) {
+                            handleReorderPlaylist(source.index, destination.index);
+                          }
+                        }}>
+                          <PlaylistViewer
+                            tracks={playlists[currentPlaylist].tracks}
+                            currentTrackIndex={currentTrackIndex}
+                            onTrackSelect={index => {
+                              setCurrentTrackIndex(index);
+                              setQueue(playlists[currentPlaylist].tracks);
+                            }}
+                          />
+                        </DragDropContext>
+                      )}
+                    </div>
+
+                    <QueueViewer
+                      queue={queue}
+                      currentTrackIndex={currentTrackIndex}
+                      onTrackSelect={setCurrentTrackIndex}
+                      onReorderQueue={handleReorderQueue}
+                    />
+                  </div>
+
+                  {editingTrack && (
+                    <TrackMetadataEditor
+                      track={editingTrack}
+                      onSave={handleSaveMetadata}
+                      onCancel={() => setEditingTrack(null)}
+                    />
                   )}
                 </div>
-
-                <QueueViewer
-                  queue={queue}
-                  currentTrackIndex={currentTrackIndex}
-                  onTrackSelect={setCurrentTrackIndex}
-                  onReorderQueue={handleReorderQueue}
-                />
-              </div>
-
-              {editingTrack && (
-                <TrackMetadataEditor
-                  track={editingTrack}
-                  onSave={handleSaveMetadata}
-                  onCancel={() => setEditingTrack(null)}
-                />
               )}
-            </div>
-          )}
-        </div>
+            </main>
 
-        <MusicPlayer 
-          tracks={queue}
-          currentTrackIndex={currentTrackIndex}
-          isPlaying={isPlaying}
-          onPlayPause={handlePlayPause}
-          onNextTrack={handleNextTrack}
-          onPreviousTrack={handlePreviousTrack}
-          onTrackEnd={handleTrackEnd}
-          onError={setError}
-          shuffle={shuffle}
-          onToggleShuffle={() => setShuffle(!shuffle)}
-          repeat={repeat}
-          onToggleRepeat={() => {
-            const modes = Object.values(REPEAT_MODES);
-            const nextIndex = (modes.indexOf(repeat) + 1) % modes.length;
-            setRepeat(modes[nextIndex]);
-          }}
-          audioContext={audioContext}
-          sourceNode={sourceNode}
-        />
+            <MusicPlayer 
+              tracks={queue}
+              currentTrackIndex={currentTrackIndex}
+              isPlaying={isPlaying}
+              onPlayPause={handlePlayPause}
+              onNextTrack={handleNextTrack}
+              onPreviousTrack={handlePreviousTrack}
+              onTrackEnd={handleTrackEnd}
+              onError={setError}
+              shuffle={shuffle}
+              onToggleShuffle={() => setShuffle(!shuffle)}
+              repeat={repeat}
+              onToggleRepeat={() => {
+                const modes = Object.values(REPEAT_MODES);
+                const nextIndex = (modes.indexOf(repeat) + 1) % modes.length;
+                setRepeat(modes[nextIndex]);
+              }}
+              audioContext={audioContext}
+              sourceNode={sourceNode}
+              volume={volume}
+              onVolumeChange={setVolume}
+              visualizerEnabled={visualizerEnabled}
+              preferences={preferences}
+            />
+          </div>
+        </div>
 
         <InstallPrompt />
 
@@ -338,20 +377,28 @@ function App() {
             onPrevious={handlePreviousTrack}
             onExit={() => setIsVehicleMode(false)}
             volume={volume}
-            onVolumeChange={handleVolumeChange}
+            onVolumeChange={setVolume}
           />
         )}
 
+        {/* Settings Button */}
         <button
           onClick={() => setIsSettingsOpen(true)}
-          className="p-2 hover:bg-gray-800 rounded-full"
+          className="fixed bottom-4 right-4 p-3 rounded-full bg-gray-800 text-white shadow-lg"
           aria-label="Open Settings"
         >
           <Settings size={24} />
         </button>
 
+        {/* Settings Panel */}
         {isSettingsOpen && (
-          <SettingsPanel onClose={() => setIsSettingsOpen(false)} />
+          <SettingsPanel 
+            onClose={() => setIsSettingsOpen(false)}
+            preferences={preferences}
+            onPreferenceChange={handlePreferenceChange}
+            visualizerEnabled={visualizerEnabled}
+            onVisualizerToggle={setVisualizerEnabled}
+          />
         )}
       </div>
     </ErrorBoundary>

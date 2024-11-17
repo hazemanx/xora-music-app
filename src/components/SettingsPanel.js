@@ -3,7 +3,7 @@ import {
   Settings, Volume2, Music, Car, Download, 
   Wifi, Battery, Sliders, Radio 
 } from 'lucide-react';
-import { useSettings } from '../hooks/useSettings';
+import { useSettings } from '../Hooks/useSettings';
 
 function SettingsPanel({ onClose }) {
   const { 

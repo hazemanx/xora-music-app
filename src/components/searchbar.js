@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { Search, Youtube, Cloud, Library, Link, Download } from 'lucide-react';
-import { useDebounce } from '../hooks/useDebounce';
+import { useDebounce } from '../Hooks/useDebounce';
 import { searchYoutube, searchSoundCloud, downloadMedia } from '../utils/mediaUtils';
 import { toast } from "@/components/ui/use-toast";
 
